@@ -37,14 +37,16 @@ nodes:
     tool: verify.mjs（7图/3标题/正文401字全通过）
     retries: 0
   - id: publish
-    status: pending          # 未发布（用户选择先不真发）
-    note: MCP 在线但账号未登录（check_login_status=未登录）；真发前需扫码登录
+    status: ok               # 2026-07-03 真发成功（Status:发布完成，PostID 空未返回）
+    tool: publish_content（MCP curl）
+    retries: 0
 selected_title: 刚上班就租房，我踩过的5个坑劝你别踩   # 标题候选0
 confirmations:
   - point: 1
     result: approved
     rounds: 2
   - point: 2
-    result: approved_unpublished
+    result: published
     selected_title_index: 0
 degradations: []
+comment_guide_posted: false   # 待用户手动贴评论区首条引导语
