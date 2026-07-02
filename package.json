@@ -1,0 +1,10 @@
+{
+  "name": "xhs-workflow",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "小红书成稿工作流的本地工具依赖",
+  "dependencies": {
+    "puppeteer": "^23.0.0"
+  }
+}
