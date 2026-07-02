@@ -11,19 +11,25 @@ const runDir = process.argv[2];
 if (!runDir) { console.error('用法: node render.mjs <运行目录>'); process.exit(2); }
 const htmlDir = path.resolve(runDir, 'html');
 const imgDir = path.resolve(runDir, 'images');
-await mkdir(imgDir, { recursive: true });
 
 let files;
 try {
   // 文件名按字典序排序；调用方约定 page-NN 两位零填充
   files = (await readdir(htmlDir)).filter(f => f.endsWith('.html')).sort();
-} catch {
-  console.error(`html/ 目录不存在: ${htmlDir}`);
+} catch (err) {
+  console.error(`html/ 目录不可读(${err.code}): ${htmlDir}`);
   process.exit(2);
 }
 if (!files.length) { console.error('html/ 目录为空'); process.exit(2); }
+await mkdir(imgDir, { recursive: true });
 
-const browser = await puppeteer.launch();
+let browser;
+try {
+  browser = await puppeteer.launch();
+} catch (err) {
+  console.error(`启动浏览器失败: ${err.message}`);
+  process.exit(2);
+}
 let failed = 0;
 let crashed = 0;
 try {
