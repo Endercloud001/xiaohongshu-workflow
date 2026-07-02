@@ -1,0 +1,47 @@
+run: 20260702-rent-traps
+topic: 刚工作的人最容易踩的 5 个租房坑
+profile_version: 1
+mode: 探索
+domain: 生活技能干货
+nodes:
+  - id: profile-load
+    status: ok
+    tool: 账号档案.md
+    retries: 0
+  - id: research
+    status: ok
+    tool: opencli.xiaohongshu.search
+    retries: 0
+  - id: angle
+    status: ok
+    tool: 选题定角器（角度B·省钱向）
+    retries: 0
+  - id: storyboard
+    status: ok
+    tool: 分镜规划器
+    retries: 0
+  - id: cover
+    status: ok
+    tool: html-cover（cover-number, 手绘涂鸦标注; 用户微调kicker/坑色/headline）
+    retries: 1
+  - id: inner-pages
+    status: ok
+    tool: 内页生成器（card-statement×5 + card-cta×1, render.mjs）
+    retries: 0
+  - id: copy
+    status: ok
+    tool: 文案生成器（3标题候选, verify.mjs PASS）
+    retries: 0
+  - id: package-review
+    status: ok
+    tool: verify.mjs（7图/3标题/正文401字全通过）
+    retries: 0
+  - id: publish
+    status: pending
+confirmations:
+  - point: 1
+    result: approved
+    rounds: 2
+  - point: 2
+    result: waiting_confirm
+degradations: []
