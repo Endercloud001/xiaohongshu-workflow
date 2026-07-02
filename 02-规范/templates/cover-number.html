@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<!-- 封面模板·数字冲击型（ponyo 6模板之一）。锚点=一个超大数字。number 建议 1-3 位；配色取自视觉风格库，accent_color 须 6 位 hex。 -->
+<html><head><meta charset="utf-8"><style>
+html,body{margin:0;padding:0;width:1080px;height:1440px;overflow:hidden;
+  font-family:"Microsoft YaHei","PingFang SC",sans-serif;
+  background:{{bg_color}};color:#1A1A1A;box-sizing:border-box;}
+*,*::before,*::after{box-sizing:inherit;}
+.page{width:1080px;height:1440px;padding:110px 90px;display:flex;flex-direction:column;position:relative;}
+.kicker{font-size:44px;letter-spacing:6px;color:{{accent_color}};font-weight:bold;word-break:break-all;}
+.numwrap{margin:auto 0;display:flex;align-items:baseline;flex-wrap:wrap;}
+.number{font-size:400px;font-weight:900;line-height:0.9;color:{{accent_color}};letter-spacing:-8px;}
+.unit{font-size:110px;font-weight:900;margin-left:16px;word-break:break-all;}
+.headline{font-size:76px;font-weight:900;line-height:1.3;word-break:break-all;}
+</style></head><body>
+<div class="page">
+  <div class="kicker">{{kicker}}</div>
+  <div class="numwrap"><span class="number">{{number}}</span><span class="unit">{{unit}}</span></div>
+  <div class="headline">{{headline}}</div>
+</div>
+</body></html>
