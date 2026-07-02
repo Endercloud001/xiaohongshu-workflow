@@ -49,4 +49,4 @@ confirmations:
     result: published
     selected_title_index: 0
 degradations: []
-comment_guide_posted: false   # 待用户手动贴评论区首条引导语
+comment_guide_posted: true    # 2026-07-03 用户已手动贴评论区首条引导语
