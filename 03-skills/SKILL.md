@@ -30,13 +30,16 @@ description: 小红书成稿工作流主控。输入一个主题或一段提示�
 | ② | 对标研究 | 主控调 MCP `search_feeds`→`get_feed_detail` | `research.md`（爆款标题/封面套路/评论区需求各≥3条） | 搜索返回≥5条；失败→降级见 §7 |
 | ③ | 选题定角 | 读 `prompts/选题定角器.md` | storyboard.md 头部角度陈述 | 三要素齐备一致 |
 | ④ | 分镜规划 | 读 `prompts/分镜规划器.md` | storyboard.md 分镜表 | 封面1+内页4-7、职能唯一、类型合法 |
-| ⑤ | 封面生产 | 读 `prompts/封面导演.md` | `prompts/cover-prompt.md`→(回填/降级)→`images/cover.png` | 提示词达标、cover 过 3:4 校验 |
+| ⑤ | 封面生产 | 读 `prompts/封面导演.md` | `prompts/cover-prompt.md`→(产线甲/乙)→`images/cover.png` | 提示词达标、cover 过 3:4 校验 |
 | **★1** | **视觉母版确认** | 主控（见 §5） | run.yaml confirmations | 用户明确「通过」 |
 | ⑥ | 内页生产 | 读 `prompts/内页生成器.md` | `html/page-NN.html`→`images/page-NN.png` | 渲染成功、无溢出 |
 | ⑦ | 文案定稿 | 读 `prompts/文案生成器.md` | `copy.md`（顶部 JSON 块 + 人读版） | verify.mjs 通过 |
 | ⑧ | 组包终审 | 主控：跑 `node 04-工具/verify.mjs 06-产出/<run>` + 对照 `../05-验收/发布前检查清单.md` | 终审报告入 run.yaml + 完整预览 | 硬校验全过 |
 | **★2** | **发布放行** | 主控（见 §5） | run.yaml confirmations | 用户明确「发」并选定标题 |
 | ⑨ | 发布与归档 | 读 `prompts/发布器.md` | `receipt.md` + 追加 `../05-验收/已发档案.jsonl` | publish 返回笔记 URL |
+
+> **封面双产线**：节点⑤有产线甲（HTML 文字封面，`render.mjs`）与产线乙（ponyo AI 成品封面，`image-gen-mcp` + `normalize-cover.mjs`），由封面导演按内容二选一，乙不达标降级甲。详见 `prompts/封面导演.md` 与 `../02-规范/封面锚点判据.md` §③。
+> **ponyo skill 作用域**：`cover-anchor-system`（`.claude/skills/`）**仅封面节点⑤可调用**（软约束，harness 无硬开关），其他节点不得使用。
 
 ## 4. 断点续跑
 
@@ -54,7 +57,7 @@ description: 小红书成稿工作流主控。输入一个主题或一段提示�
 1. 封面图路径 `06-产出/<run>/images/cover.png`
 2. storyboard.md 分镜表
 3. 风格说明（选了哪个模板+哪个风格+理由）
-4. 封面锚点 5 项诊断自评表（对照 `../02-规范/封面锚点判据.md` 逐项打勾）
+4. 封面锚点诊断自评表（对照 `../02-规范/封面锚点判据.md` §④ 逐项打勾；产线乙 AI 封面含 ⑥ 中文正确性）
 > 问："封面和分镜通过吗？还是要调整？（通过则生成整套内页）"
 - 用户通过 → confirmations 记 `approved`，进节点⑥。
 - 要调整 → 依意见回节点④或⑤；最多 2 轮，仍不过 → 暂停待人工指示。
