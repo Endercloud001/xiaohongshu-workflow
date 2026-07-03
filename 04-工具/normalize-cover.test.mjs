@@ -1,6 +1,6 @@
 // 04-工具/normalize-cover.test.mjs — normalize-cover.mjs 自测（造 fixture 用 puppeteer）
 import puppeteer from 'puppeteer';
-import { mkdir, rm, readFile } from 'node:fs/promises';
+import { mkdir, rm, readFile, writeFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -31,6 +31,7 @@ await mkdir(assets, { recursive: true });
     const buf = await readFile(path.join(images, 'cover.png'));
     const w = buf.readUInt32BE(16), h = buf.readUInt32BE(20);
     if (w !== 2160 || h !== 2880) fails.push(`输出尺寸应为2160x2880，实际${w}x${h}`);
+    // 容许 puppeteer 截图/DSF 缩放的浮点误差
     if (Math.abs(w / h - 3 / 4) > 0.02 * (3 / 4)) fails.push(`输出比例非3:4: ${w}x${h}`);
   } catch { fails.push('未生成 images/cover.png'); }
 }
@@ -40,6 +41,14 @@ await mkdir(assets, { recursive: true });
   await rm(path.join(assets, 'cover-src.png'), { force: true });
   const r = spawnSync('node', [path.join(here, 'normalize-cover.mjs'), tmp], { encoding: 'utf8' });
   if (r.status !== 2) fails.push(`缺源图退出码应为2，实际${r.status}`);
+}
+
+// case 3: 坏源图（非 PNG 内容）→ 解码失败 → 退出码 1
+{
+  await mkdir(assets, { recursive: true });
+  await writeFile(path.join(assets, 'cover-src.png'), 'not a real png');
+  const r = spawnSync('node', [path.join(here, 'normalize-cover.mjs'), tmp], { encoding: 'utf8' });
+  if (r.status !== 1) fails.push(`坏源图退出码应为1，实际${r.status}`);
 }
 
 await rm(tmp, { recursive: true, force: true });
