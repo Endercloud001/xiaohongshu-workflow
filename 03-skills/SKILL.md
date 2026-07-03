@@ -30,7 +30,7 @@ description: 小红书成稿工作流主控。输入一个主题或一段提示�
 | ② | 对标研究 | 主控调 MCP `search_feeds`→`get_feed_detail` | `research.md`（爆款标题/封面套路/评论区需求各≥3条） | 搜索返回≥5条；失败→降级见 §7 |
 | ③ | 选题定角 | 读 `prompts/选题定角器.md` | storyboard.md 头部角度陈述 | 三要素齐备一致 |
 | ④ | 分镜规划 | 读 `prompts/分镜规划器.md` | storyboard.md 分镜表 | 封面1+内页4-7、职能唯一、类型合法 |
-| ⑤ | 封面生产 | 读 `prompts/封面导演.md` | `prompts/cover-prompt.md`→(回填/降级)→`images/cover.png` | 提示词达标、cover 过 3:4 校验 |
+| ⑤ | 封面生产 | 读 `prompts/封面导演.md` | `prompts/cover-prompt.md`→(产线甲/乙)→`images/cover.png` | 提示词达标、cover 过 3:4 校验 |
 | **★1** | **视觉母版确认** | 主控（见 §5） | run.yaml confirmations | 用户明确「通过」 |
 | ⑥ | 内页生产 | 读 `prompts/内页生成器.md` | `html/page-NN.html`→`images/page-NN.png` | 渲染成功、无溢出 |
 | ⑦ | 文案定稿 | 读 `prompts/文案生成器.md` | `copy.md`（顶部 JSON 块 + 人读版） | verify.mjs 通过 |
@@ -57,7 +57,7 @@ description: 小红书成稿工作流主控。输入一个主题或一段提示�
 1. 封面图路径 `06-产出/<run>/images/cover.png`
 2. storyboard.md 分镜表
 3. 风格说明（选了哪个模板+哪个风格+理由）
-4. 封面锚点 5 项诊断自评表（对照 `../02-规范/封面锚点判据.md` 逐项打勾）
+4. 封面锚点诊断自评表（对照 `../02-规范/封面锚点判据.md` §④ 逐项打勾；产线乙 AI 封面含 ⑥ 中文正确性）
 > 问："封面和分镜通过吗？还是要调整？（通过则生成整套内页）"
 - 用户通过 → confirmations 记 `approved`，进节点⑥。
 - 要调整 → 依意见回节点④或⑤；最多 2 轮，仍不过 → 暂停待人工指示。
