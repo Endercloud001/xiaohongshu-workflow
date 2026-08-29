@@ -51,6 +51,12 @@ await mkdir(assets, { recursive: true });
   if (r.status !== 1) fails.push(`坏源图退出码应为1，实际${r.status}`);
 }
 
+// case 4: 缺参数属于用法错误 → 退出码 2（与 normalize-image CLI 契约一致）
+{
+  const r = spawnSync('node', [path.join(here, 'normalize-cover.mjs')], { encoding: 'utf8' });
+  if (r.status !== 2) fails.push(`缺参数退出码应为2，实际${r.status}`);
+}
+
 await rm(tmp, { recursive: true, force: true });
 if (fails.length) { fails.forEach(f => console.error('FAIL ' + f)); process.exit(1); }
 console.log('PASS normalize-cover 自测通过'); process.exit(0);

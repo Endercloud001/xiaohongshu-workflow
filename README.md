@@ -30,15 +30,24 @@
 
 ## 环境要求
 
-- Node.js >= 20
-- npm
-- Windows 本地环境（当前脚本与周边工具按此环境实测）
+- Node.js >= 20 且 < 25（推荐使用当前 `.nvmrc` 的 Node 20 LTS）
+- npm 10（`package.json` 已固定推荐版本；更高版本也可执行 lockfile v3）
+- Windows 本地环境已实测；确定性 Node 命令不依赖 Windows 专属可执行文件
 
 ## 安装
 
 ```bash
-npm install
+npm ci
+npm test
+npm run check:config
+npm run smoke
 ```
+
+`npm ci` 严格按 `package-lock.json` 安装并下载 Puppeteer 所需浏览器。若受代理或网络策略影响，先修复下载问题，不要改用仓库中的本地 `node_modules` 或提交浏览器可执行文件。
+
+Puppeteer 当前精确锁定为 23.11.1，以复现已验证的 Windows/Chrome 131 组合；npm 会提示该版本已停止上游支持。升级须同时验证新版自带 Chrome 在目标 Windows 环境可启动，不能只改依赖范围。
+
+基础四条命令不需要 Cookie、Token、MCP 服务或小红书登录态。`.env.example` 只列出可选研究后端的非敏感默认值；如需覆盖，请复制为被 Git 忽略的 `.env`，并在调用命令前由 shell 或运行器加载。
 
 本地首次运行前，准备私有文件：
 
@@ -69,9 +78,20 @@ Pop-Location
 npx playwright install chromium
 ```
 
-研究增强可选安装：
+## 可选能力边界
+
+以下能力都不是 `npm ci`、`npm test`、`npm run check:config` 或 `npm run smoke` 的前置条件：
+
+- OpenCLI（`@jackwener/opencli`）：仓库外安装的只读研究首选；认证和会话数据不得进入本仓库。
+- redbook（`@lucasygu/redbook`）：仓库外安装的可选只读增强；缺失不影响主路径。
+- xiaohongshu-mcp：仓库外独立服务，仅在 OpenCLI 不可用时作为只读研究兜底；本仓库的 `.mcp.json` 只含本机默认 URL，不包含服务二进制、Cookie 或登录态。
+- `xhs-visual-director`：已随公开快照提供，无需另行安装。
+- `cover-anchor-system` 与 `guizang-social-card-skill`：仅可在接受上文许可边界后本地显式安装，目录被 Git 忽略，缺失时由仓库内 HTML 模板降级。
+
+研究增强示例（按需选择，不要作为基础安装步骤）：
 
 ```bash
+npm install -g @jackwener/opencli
 npm install -g @lucasygu/redbook
 ```
 
@@ -80,6 +100,8 @@ npm install -g @lucasygu/redbook
 - 新建 run：`/xhs <主题>`
 - 继续 run：`继续 <run>`
 - 运行测试：`npm test`
+- 检查基础配置：`npm run check:config`
+- 运行无网络最小 fixture：`npm run smoke`
 - 运行硬校验：`npm run verify -- 06-产出/<run>`
 - 渲染 HTML：`npm run render -- 06-产出/<run>`
 
