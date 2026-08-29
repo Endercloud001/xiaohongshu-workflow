@@ -12,9 +12,9 @@
 | HTML 模板 | `02-规范/templates/` | 本项目根许可证 | 项目自有模板；未复制第三方字体或图片。设计思路的来源标注见对应规范。 |
 | 测试图片与 HTML | `06-产出/00000000-selftest/`、`06-产出/00000000-verify-fixture/` | 本项目根许可证 | 由仓库模板和测试脚本生成的确定性夹具；不作为第三方素材库。 |
 
-## 仅外置安装或运行时使用
+## 仅本地显式安装或运行时使用
 
-以下项目不在 Git 跟踪树中分发。安装会在用户本机产生其自身文件，使用者仍应遵守对应上游许可证和服务条款。
+以下项目不随公开 Git 树分发。部分项目仅在用户本地显式安装到被 `.gitignore` 排除的目录后才可能参与路由；安装会在用户本机产生其自身文件，使用者须自行确认并遵守对应上游许可证和服务条款。
 
 | 项目 | 用途 | 已核验许可证 | 分发处理 |
 |---|---|---|---|
@@ -22,8 +22,8 @@
 | [OpenCLI](https://github.com/jackwener/opencli) (`@jackwener/opencli`) | 小红书只读研究首选后端 | Apache-2.0 | 全局或外部安装；仓库不复制其源码、浏览器配置或会话数据。 |
 | [redbook](https://github.com/lucasygu/redbook) (`@lucasygu/redbook`) | 已安装且入口检查通过时的可选只读研究增强 | MIT | 可选全局安装；认证与 Cookie 留在仓库外。 |
 | [xiaohongshu-mcp](https://github.com/xpzouying/xiaohongshu-mcp) | OpenCLI 不可用时的只读研究兜底 | Apache-2.0 | 作为独立本地服务安装；本仓库不分发服务端、可执行文件或登录数据。 |
-| [ponyo-cover-anchor-system](https://github.com/ponyodong2026/ponyo-cover-anchor-system) | 可选封面方法 skill | **上游未声明许可证** | 无许可证的使用与再分发风险未解决；不随仓库分发，只有用户在仓库外显式安装后才可能按 `style-registry.yaml` 参与路由。 |
-| [guizang-social-card-skill](https://github.com/op7418/guizang-social-card-skill) | 可选结构化卡片与版式校验 | AGPL-3.0 | 不随仓库分发，只有用户在仓库外显式安装后才可能按 `style-registry.yaml` 参与路由；使用者须评估并履行 AGPL-3.0 义务。 |
+| [ponyo-cover-anchor-system](https://github.com/ponyodong2026/ponyo-cover-anchor-system) | 可选封面方法 skill | **上游未声明许可证** | 无许可证的使用与再分发风险未解决；仅在用户本地显式安装到被 `.gitignore` 排除的 `.claude/skills/cover-anchor-system/` 后才可能按 `style-registry.yaml` 参与路由，不随公开 Git 树分发；安装、使用及合规责任由用户承担。 |
+| [guizang-social-card-skill](https://github.com/op7418/guizang-social-card-skill) | 可选结构化卡片与版式校验 | AGPL-3.0 | 仅在用户本地显式安装到被 `.gitignore` 排除的 `.claude/skills/guizang-social-card-skill/` 后才可能按 `style-registry.yaml` 参与路由，不随公开 Git 树分发；使用者须自行评估并履行 AGPL-3.0 义务。 |
 
 ### `xhs-visual-director` 快照校验
 
@@ -60,13 +60,13 @@ print(hashlib.sha256(manifest.encode("utf-8")).hexdigest())
 ## 维护规则
 
 1. 新增或更新 vendored 目录前，必须确认许可证允许再分发，并同时记录精确上游 commit 或 tag、核验日期、可复现的本地快照校验值，以及校验算法与范围；同时保留版权声明和许可证原文。确实无法取得上游版本时，必须明确写“版本未知”，记录本地快照校验值、核验日期和无法确认版本的限制，不得省略或推测版本。
-2. 无许可证、来源不明、仅限商业授权或 copyleft 义务尚未评估的内容，默认改为仓库外安装，不进入公开跟踪树。
+2. 无许可证、来源不明、仅限商业授权或 copyleft 义务尚未评估的内容，默认仅允许用户本地显式安装到被 `.gitignore` 排除的目录，不进入公开 Git 树；相关安装、使用与合规责任由用户承担。
 3. `cookies*.json`、认证状态、浏览器 profile、`.env*`、可执行文件、压缩包、日志、`node_modules/` 和真实运行产物不得提交。
 4. 升级 npm 依赖后，重新检查 `package-lock.json` 中的许可证字段和新增包；字段缺失时不得直接推定为宽松许可证。
-5. 外置项目的许可证可能变化；公开发布前应按锁定版本或安装时提交再次核验。
+5. 本地安装项目的许可证可能变化；公开发布前应按锁定版本或安装时提交再次核验。
 
 ## 本次审计结果
 
 - 公开跟踪树中未发现 `cover-anchor-system`、`guizang-social-card-skill`、`node_modules/`、Cookie、浏览器可执行文件或字体二进制。
 - 唯一 vendored 的第三方 skill 为 MIT 的 `xhs-visual-director`，且许可证原文已随目录保留。
-- 没有因本次审计删除本地文件；高风险项目继续采用外置安装边界。
+- 没有因本次审计删除本地文件；高风险项目继续采用“仅本地显式安装到被 `.gitignore` 排除的目录、不随公开 Git 树分发”的边界。

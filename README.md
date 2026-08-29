@@ -49,10 +49,10 @@ npm install
 `.claude/skills/xhs-visual-director/`，克隆本仓库后无需重复安装，也不要向这个非空目录再次执行
 `git clone`。其 MIT 许可证原文已随目录保留。
 
-其余视觉技能不随仓库分发。安装前请先确认以下许可与项目政策边界：
+其余视觉技能不随公开 Git 树分发。安装前请先确认以下许可与项目政策边界：
 
-- `cover-anchor-system` 上游未声明许可证，具有无许可证的使用与再分发风险；它不随仓库分发，只有用户在仓库外显式安装后才可能按 `style-registry.yaml` 参与路由。
-- `guizang-social-card-skill` 上游许可证为 AGPL-3.0，使用者须评估并履行 AGPL 义务；它不随仓库分发，只有用户在仓库外显式安装后才可能按 `style-registry.yaml` 参与路由。
+- `cover-anchor-system` 上游未声明许可证，具有无许可证的使用与再分发风险；仅在用户本地显式安装到被 `.gitignore` 排除的 `.claude/skills/cover-anchor-system/` 后才可能按 `style-registry.yaml` 参与路由，不随公开 Git 树分发；安装、使用及合规责任由用户承担。
+- `guizang-social-card-skill` 上游许可证为 AGPL-3.0；仅在用户本地显式安装到被 `.gitignore` 排除的 `.claude/skills/guizang-social-card-skill/` 后才可能按 `style-registry.yaml` 参与路由，不随公开 Git 树分发；使用者须自行评估并履行 AGPL-3.0 义务。
 
 接受上述边界后，仅在目标目录不存在时安装：
 
@@ -94,8 +94,8 @@ npm install -g @lucasygu/redbook
 | 项目 | 用途 | 许可 | 处理方式 |
 |---|---|---|---|
 | `xhs-visual-director-skill` | 内页视觉一致性知识 | MIT | 随当前快照提供（含上游 LICENSE），无需重复 clone |
-| `ponyo-cover-anchor-system` | 封面专项 skill | 上游未声明 LICENSE | 不随仓库分发；无许可证风险；仅在用户仓库外显式安装后才可能按 registry 路由 |
-| `guizang-social-card-skill` | 结构化图文与版式校验 | AGPL-3.0 | 不随仓库分发；仅在用户仓库外显式安装后才可能按 registry 路由，并须履行 AGPL 义务 |
+| `ponyo-cover-anchor-system` | 封面专项 skill | 上游未声明 LICENSE | 无许可证风险；仅在本地显式安装到被 `.gitignore` 排除的 `.claude/skills/cover-anchor-system/` 后才可能按 registry 路由；不随公开 Git 树分发；安装、使用及合规责任由用户承担 |
+| `guizang-social-card-skill` | 结构化图文与版式校验 | AGPL-3.0 | 仅在本地显式安装到被 `.gitignore` 排除的 `.claude/skills/guizang-social-card-skill/` 后才可能按 registry 路由；不随公开 Git 树分发；使用者须自行评估并履行 AGPL-3.0 义务 |
 | `Puppeteer` | 本地 HTML 渲染与图片规范化 | Apache-2.0 | npm 安装；不跟踪 `node_modules` 或浏览器可执行文件 |
 | `OpenCLI` (`@jackwener/opencli`) | 只读研究首选 | Apache-2.0 | 仓库外安装，不分发会话数据 |
 | `redbook` (`@lucasygu/redbook`) | 可选只读研究增强 | MIT | 已安装且入口检查通过时可用，认证数据留在仓库外 |
