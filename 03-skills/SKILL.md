@@ -20,10 +20,9 @@ description: 小红书成稿工作流主控。输入一个主题或一段提示�
 1. 读 `../01-账号/账号档案.md`。若文件缺失，或 `candidate_domains`/`candidate_styles` 为空，则停止并引导用户先填写档案。
 2. 做研究后端体检：
    - 先跑 `agent-reach doctor --json`，读取 `xiaohongshu.active_backend`。
-   - 若 `OpenCLI` 可用，设置 `research_backend=OpenCLI`，研究节点走首选后端。
-   - 若 `OpenCLI` 不可用，检查本机 `redbook` 命令及 `redbook health`；可用时设置 `research_backend=redbook`，研究节点降级到 redbook。
-   - 若 redbook 也不可用，再检查 xiaohongshu-mcp 的 `check_login_status`；可用时设置 `research_backend=xiaohongshu-mcp`，作为最终兼容后端。
-   - 三者皆不可用时，不阻断全流程，但 research 节点须预记为将降级执行，并记录无可用研究后端。
+   - 若 `OpenCLI` 可用，研究节点走首选后端。
+   - 若不可用，再检查 xiaohongshu-mcp 的 `check_login_status`。
+   - 两者皆不可用时，不阻断全流程，但 research 节点须预记为将降级执行。
 3. 检查 `03-skills/style-registry.yaml` 存在，且所列 skill 目录存在。缺失项在路由时不可选，并须写入降级说明。
 
 ## 3. 12 节点编排
@@ -33,7 +32,7 @@ description: 小红书成稿工作流主控。输入一个主题或一段提示�
 | # | 节点 | 执行 | 产物 | 通过标准 |
 |---|---|---|---|---|
 | ① | 档案加载 | 主控直接做 | run.yaml 头部（mode/domain 边界） | 档案必填字段齐 |
-| ② | 只读研究 | 主控：按 OpenCLI → redbook → xiaohongshu-mcp 依次选择首个可用后端，并写入 `research_backend` | `research.md` + `research-evidence.json` | 搜到足够证据，或合法降级 |
+| ② | 只读研究 | 主控：首选 agent-reach OpenCLI；增强 redbook（若已装）；兜底 xiaohongshu-mcp | `research.md` + `research-evidence.json` | 搜到足够证据，或合法降级 |
 | ③ | Topic Gate | 读 `prompts/选题闸门.md` | `topic-gate.md` + `topic-score.json` | verdict 为 `go` 或给出合法 `revise/reject` |
 | ④ | 选题定角 | 读 `prompts/选题定角器.md` | storyboard.md 头部角度陈述 | 三要素齐备一致 |
 | ⑤ | 分镜规划 | 读 `prompts/分镜规划器.md` | storyboard.md 分镜表 | 封面 1 + 内页 4-7，职能唯一 |

@@ -20,10 +20,10 @@
 |---|---|---|---|
 | [Puppeteer](https://github.com/puppeteer/puppeteer) 23.11.1 | HTML 渲染和图片规范化 | Apache-2.0 | 由 npm 安装；`node_modules/` 和下载的浏览器可执行文件不跟踪。锁文件中的传递依赖为 MIT、Apache-2.0、BSD-2-Clause、BSD-3-Clause、ISC、0BSD、Python-2.0。 |
 | [OpenCLI](https://github.com/jackwener/opencli) (`@jackwener/opencli`) | 小红书只读研究首选后端 | Apache-2.0 | 全局或外部安装；仓库不复制其源码、浏览器配置或会话数据。 |
-| [redbook](https://github.com/lucasygu/redbook) (`@lucasygu/redbook`) | OpenCLI 不可用时的只读研究降级后端 | MIT | 可选全局安装；认证与 Cookie 留在仓库外。 |
-| [xiaohongshu-mcp](https://github.com/xpzouying/xiaohongshu-mcp) | OpenCLI 与 redbook 均不可用时的只读研究最终兼容后端 | Apache-2.0 | 作为独立本地服务安装；本仓库不分发服务端、可执行文件或登录数据。 |
-| [ponyo-cover-anchor-system](https://github.com/ponyodong2026/ponyo-cover-anchor-system) | 可选封面方法 skill | **上游未声明许可证** | 不得 vendoring 或随本仓库再分发；仅提供用户自行安装说明，目录已被 `.gitignore` 排除。 |
-| [guizang-social-card-skill](https://github.com/op7418/guizang-social-card-skill) | 可选结构化卡片与版式校验 | AGPL-3.0 | 本项目政策：不随仓库分发、不纳入公开跟踪树、不默认集成；仅由用户自行安装并遵守 AGPL-3.0。 |
+| [redbook](https://github.com/lucasygu/redbook) (`@lucasygu/redbook`) | 已安装且入口检查通过时的可选只读研究增强 | MIT | 可选全局安装；认证与 Cookie 留在仓库外。 |
+| [xiaohongshu-mcp](https://github.com/xpzouying/xiaohongshu-mcp) | OpenCLI 不可用时的只读研究兜底 | Apache-2.0 | 作为独立本地服务安装；本仓库不分发服务端、可执行文件或登录数据。 |
+| [ponyo-cover-anchor-system](https://github.com/ponyodong2026/ponyo-cover-anchor-system) | 可选封面方法 skill | **上游未声明许可证** | 无许可证的使用与再分发风险未解决；不随仓库分发，只有用户在仓库外显式安装后才可能按 `style-registry.yaml` 参与路由。 |
+| [guizang-social-card-skill](https://github.com/op7418/guizang-social-card-skill) | 可选结构化卡片与版式校验 | AGPL-3.0 | 不随仓库分发，只有用户在仓库外显式安装后才可能按 `style-registry.yaml` 参与路由；使用者须评估并履行 AGPL-3.0 义务。 |
 
 ### `xhs-visual-director` 快照校验
 
