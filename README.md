@@ -13,7 +13,7 @@
 
 ## 项目定位
 
-- 研究只读：OpenCLI 是首选主后端；redbook 仅在已安装且入口检查通过时作为可选证据增强；xiaohongshu-mcp 是 OpenCLI 不可用时的兜底主后端
+- 研究只读：按 OpenCLI → redbook → xiaohongshu-mcp 依次选择首个可用后端；redbook 可用时设置 `research_backend=redbook`，xiaohongshu-mcp 仅作最终兜底
 - 视觉可插拔：封面 / 内页按风格注册表动态路由
 - 双闸门：研究后做 Topic Gate，成图后做 Visual Gate
 - 人工发布：仓库不包含自动发布、自动评论、自动点赞收藏能力
@@ -69,7 +69,7 @@ Pop-Location
 npx playwright install chromium
 ```
 
-研究增强可选安装：
+研究第二后端可选安装：
 
 ```bash
 npm install -g @lucasygu/redbook
@@ -98,8 +98,8 @@ npm install -g @lucasygu/redbook
 | `guizang-social-card-skill` | 结构化图文与版式校验 | AGPL-3.0 | 本项目政策：不随仓库分发、不纳入公开跟踪树、不默认集成；仅提供用户自行安装命令 |
 | `Puppeteer` | 本地 HTML 渲染与图片规范化 | Apache-2.0 | npm 安装；不跟踪 `node_modules` 或浏览器可执行文件 |
 | `OpenCLI` (`@jackwener/opencli`) | 只读研究首选 | Apache-2.0 | 仓库外安装，不分发会话数据 |
-| `redbook` (`@lucasygu/redbook`) | 只读研究增强 | MIT | 可选安装，认证数据留在仓库外 |
-| `xiaohongshu-mcp` | 只读研究兜底 | Apache-2.0 | 独立本地服务，不随仓库分发 |
+| `redbook` (`@lucasygu/redbook`) | 只读研究第二后端 | MIT | 可选安装，认证数据留在仓库外 |
+| `xiaohongshu-mcp` | 只读研究最终兜底 | Apache-2.0 | 独立本地服务，不随仓库分发 |
 
 仓库根 `LICENSE` 只适用于本仓库自有文件，不适用于 `.claude/skills/` 下第三方 skill。
 完整审计、传递依赖许可类型和字体 / 图片 / 模板边界见
