@@ -20,8 +20,8 @@
 |---|---|---|---|
 | [Puppeteer](https://github.com/puppeteer/puppeteer) 23.11.1 | HTML 渲染和图片规范化 | Apache-2.0 | 由 npm 安装；`node_modules/` 和下载的浏览器可执行文件不跟踪。锁文件中的传递依赖为 MIT、Apache-2.0、BSD-2-Clause、BSD-3-Clause、ISC、0BSD、Python-2.0。 |
 | [OpenCLI](https://github.com/jackwener/opencli) (`@jackwener/opencli`) | 小红书只读研究首选后端 | Apache-2.0 | 全局或外部安装；仓库不复制其源码、浏览器配置或会话数据。 |
-| [redbook](https://github.com/lucasygu/redbook) (`@lucasygu/redbook`) | 可选只读研究增强 | MIT | 可选全局安装；认证与 Cookie 留在仓库外。 |
-| [xiaohongshu-mcp](https://github.com/xpzouying/xiaohongshu-mcp) | 只读研究兜底 | Apache-2.0 | 作为独立本地服务安装；本仓库不分发服务端、可执行文件或登录数据。 |
+| [redbook](https://github.com/lucasygu/redbook) (`@lucasygu/redbook`) | OpenCLI 不可用时的只读研究降级后端 | MIT | 可选全局安装；认证与 Cookie 留在仓库外。 |
+| [xiaohongshu-mcp](https://github.com/xpzouying/xiaohongshu-mcp) | OpenCLI 与 redbook 均不可用时的只读研究最终兼容后端 | Apache-2.0 | 作为独立本地服务安装；本仓库不分发服务端、可执行文件或登录数据。 |
 | [ponyo-cover-anchor-system](https://github.com/ponyodong2026/ponyo-cover-anchor-system) | 可选封面方法 skill | **上游未声明许可证** | 不得 vendoring 或随本仓库再分发；仅提供用户自行安装说明，目录已被 `.gitignore` 排除。 |
 | [guizang-social-card-skill](https://github.com/op7418/guizang-social-card-skill) | 可选结构化卡片与版式校验 | AGPL-3.0 | 本项目政策：不随仓库分发、不纳入公开跟踪树、不默认集成；仅由用户自行安装并遵守 AGPL-3.0。 |
 
@@ -32,9 +32,22 @@
 - 核验日期：2026-08-29
 - 本地快照：`.claude/skills/xhs-visual-director/`，共 24 个文件
 - 比对结果：22 个文件与上游基线对应 Git blob 一致；上游 `skill/` 在本地被扁平化，`README.md` 和扁平化后的 `SKILL.md` 含本地差异，因此本地目录不是上游提交的逐字节完整副本
-- 本地快照清单 SHA-256：`ca2dce958d17290e66381ba281f706a70edfb8694162f7a00348c2d8b4838592`
+- 本地快照清单 SHA-256：`158fc52135c45d36ef01d1f52da5853699d7fd5ec60b2196ee17b2460abdef4f`
 
 校验值的生成口径：递归读取该目录的 24 个文件；对每个文件的原始字节计算 SHA-256，生成 `<小写哈希><两个空格><POSIX 相对路径>`；按相对路径排序，以 UTF-8（无 BOM）和 LF 拼接（末尾保留 LF），再对完整清单计算 SHA-256。该清单摘要用于识别本地快照，不把两处本地差异归属于上游提交。
+
+可复现的 Python 口径（从仓库根目录运行）：
+
+```python
+from pathlib import Path
+import hashlib
+
+root = Path(".claude/skills/xhs-visual-director")
+rows = [(p.relative_to(root).as_posix(), hashlib.sha256(p.read_bytes()).hexdigest())
+        for p in root.rglob("*") if p.is_file()]
+manifest = "".join(f"{digest}  {path}\n" for path, digest in sorted(rows))
+print(hashlib.sha256(manifest.encode("utf-8")).hexdigest())
+```
 
 ## 字体、图片、模板与生成资源
 
