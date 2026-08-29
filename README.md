@@ -47,7 +47,7 @@ npm install
 
 `xhs-visual-director` 已随当前仓库快照提供在
 `.claude/skills/xhs-visual-director/`，克隆本仓库后无需重复安装，也不要向这个非空目录再次执行
-`git clone`。
+`git clone`。其 MIT 许可证原文已随目录保留。
 
 其余视觉技能不随仓库分发。仅在目标目录不存在时安装：
 
@@ -91,9 +91,14 @@ npm install -g @lucasygu/redbook
 | `xhs-visual-director-skill` | 内页视觉一致性知识 | MIT | 随当前快照提供（含上游 LICENSE），无需重复 clone |
 | `ponyo-cover-anchor-system` | 封面专项 skill | 上游未声明 LICENSE | 不随仓库分发，只提供安装命令 |
 | `guizang-social-card-skill` | 结构化图文与版式校验 | AGPL-3.0 / 商业双许可 | 不随仓库分发，只提供安装命令 |
-| `redbook` | 研究增强与发布后健康检查 | 以上游仓库为准 | 可选安装 |
+| `Puppeteer` | 本地 HTML 渲染与图片规范化 | Apache-2.0 | npm 安装；不跟踪 `node_modules` 或浏览器可执行文件 |
+| `OpenCLI` (`@jackwener/opencli`) | 只读研究首选 | Apache-2.0 | 仓库外安装，不分发会话数据 |
+| `redbook` (`@lucasygu/redbook`) | 只读研究增强 | MIT | 可选安装，认证数据留在仓库外 |
+| `xiaohongshu-mcp` | 只读研究兜底 | Apache-2.0 | 独立本地服务，不随仓库分发 |
 
 仓库根 `LICENSE` 只适用于本仓库自有文件，不适用于 `.claude/skills/` 下第三方 skill。
+完整审计、传递依赖许可类型和字体 / 图片 / 模板边界见
+[`THIRD_PARTY_LICENSES/README.md`](THIRD_PARTY_LICENSES/README.md)。
 
 ## 公开化基线说明
 
