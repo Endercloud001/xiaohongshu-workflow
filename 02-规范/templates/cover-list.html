@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<!-- 封面模板·清单型（ponyo 6模板之一）。锚点=编号序列。封面版条目少而大：item ≤4，不足删多余 .item 整块。title 用 <em> 局部变色。accent_color 须 6 位 hex。 -->
+<html><head><meta charset="utf-8"><style>
+html,body{margin:0;padding:0;width:1080px;height:1440px;overflow:hidden;
+  font-family:"Microsoft YaHei","PingFang SC",sans-serif;
+  background:{{bg_color}};color:#1A1A1A;box-sizing:border-box;}
+*,*::before,*::after{box-sizing:inherit;}
+.page{width:1080px;height:1440px;padding:100px 84px;display:flex;flex-direction:column;position:relative;}
+.kicker{font-size:44px;letter-spacing:6px;color:{{accent_color}};font-weight:bold;word-break:break-all;}
+.title{font-size:92px;font-weight:900;line-height:1.2;margin:28px 0 56px;word-break:break-all;}
+.title em{font-style:normal;color:{{accent_color}};}
+.item{display:flex;gap:28px;align-items:center;margin-bottom:40px;}
+.dot{flex:none;width:72px;height:72px;border-radius:50%;background:{{accent_color}};
+  color:#fff;font-size:40px;font-weight:bold;display:flex;align-items:center;justify-content:center;}
+.itxt{font-size:56px;font-weight:bold;line-height:1.25;word-break:break-all;}
+</style></head><body>
+<div class="page">
+  <div class="kicker">{{kicker}}</div>
+  <div class="title">{{title}}</div>
+  <div class="item"><div class="dot">1</div><div class="itxt">{{item1}}</div></div>
+  <div class="item"><div class="dot">2</div><div class="itxt">{{item2}}</div></div>
+  <div class="item"><div class="dot">3</div><div class="itxt">{{item3}}</div></div>
+  <div class="item"><div class="dot">4</div><div class="itxt">{{item4}}</div></div>
+</div>
+</body></html>

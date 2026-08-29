@@ -1,0 +1,41 @@
+# 本地认证、会话和密钥文件
+cookies.json
+cookies.*.json
+*.cookies.json
+web_session*
+auth-state*.json
+storage-state*.json
+*credential*.json
+*credentials*.json
+.env
+.env.*
+!.env.example
+*.secret
+*.secrets
+*.pem
+*.key
+*.p12
+*.pfx
+
+# 本地运行时与下载物
+*.exe
+*.zip
+*.log
+node_modules/
+.redbook/
+.claude/settings.local.json
+.claude/skills/cover-anchor-system/
+.claude/skills/guizang-social-card-skill/
+
+# 真实账号档案与发布记录；仅提交明确标记的虚构示例
+01-账号/*
+!01-账号/账号档案.example.md
+05-验收/已发档案*.jsonl
+!05-验收/已发档案.example.jsonl
+
+# 真实运行产物不公开；只保留确定性的测试夹具
+06-产出/*
+!06-产出/00000000-selftest/
+!06-产出/00000000-selftest/**
+!06-产出/00000000-verify-fixture/
+!06-产出/00000000-verify-fixture/**

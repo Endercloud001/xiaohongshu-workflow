@@ -1,0 +1,43 @@
+version: 1
+families:
+  暖纸手绘: cover-anchor-system
+  瑞士理性: guizang-social-card-skill
+  杂志叙事: guizang-social-card-skill
+  高对比信息卡: xhs-visual-director
+
+skills:
+  - id: cover-anchor-system
+    path: .claude/skills/cover-anchor-system
+    role: cover
+    strengths: [high-ctr-cover, visual-anchor, chinese-cover-prompt]
+    best_for: [冲突型, 数字型, 情绪型, 场景实拍型]
+    output_mode: image_prompt
+    review_checklist: references/cover-diagnosis-checklist.md
+    fallback: guizang-social-card-skill
+
+  - id: xhs-visual-director
+    path: .claude/skills/xhs-visual-director
+    role: inner
+    strengths: [style-system, page-sequencing, visual-consistency]
+    best_for: [教程, 方法论, 观点型图文, 科技感, 杂志感]
+    output_mode: image_prompt
+    review_checklist: docs/visual_consistency_protocol.md
+    fallback: guizang-social-card-skill
+
+  - id: guizang-social-card-skill
+    path: .claude/skills/guizang-social-card-skill
+    role: cover_or_inner_fallback
+    strengths: [deterministic-layout, swiss-style, editorial-style, html-to-png]
+    best_for: [清单, 对比, 数据页, 结构化信息页, 密集中文]
+    output_mode: html_png
+    validator: validate-social-deck.mjs
+    review_checklist: references/qa-checklist.md
+    fallback: html-templates
+    excluded_topics: [日常OOTD全身, 美食摆盘大片, 梦核氛围装饰, Y2K装饰系]
+
+  - id: html-templates
+    path: 02-规范/templates
+    role: terminal_fallback
+    strengths: [zero-dependency, deterministic]
+    output_mode: html_png
+    fallback: null
