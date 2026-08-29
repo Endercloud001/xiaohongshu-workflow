@@ -23,7 +23,7 @@
 | [redbook](https://github.com/lucasygu/redbook) (`@lucasygu/redbook`) | 可选只读研究增强 | MIT | 可选全局安装；认证与 Cookie 留在仓库外。 |
 | [xiaohongshu-mcp](https://github.com/xpzouying/xiaohongshu-mcp) | 只读研究兜底 | Apache-2.0 | 作为独立本地服务安装；本仓库不分发服务端、可执行文件或登录数据。 |
 | [ponyo-cover-anchor-system](https://github.com/ponyodong2026/ponyo-cover-anchor-system) | 可选封面方法 skill | **上游未声明许可证** | 不得 vendoring 或随本仓库再分发；仅提供用户自行安装说明，目录已被 `.gitignore` 排除。 |
-| [guizang-social-card-skill](https://github.com/op7418/guizang-social-card-skill) | 可选结构化卡片与版式校验 | AGPL-3.0；上游另述商业授权 | 不随仓库分发；仅由用户自行安装。若修改、部署或通过网络提供其能力，需自行评估 AGPL 和商业授权义务。 |
+| [guizang-social-card-skill](https://github.com/op7418/guizang-social-card-skill) | 可选结构化卡片与版式校验 | AGPL-3.0（未确认商业授权） | 不随仓库分发，不纳入公开跟踪树；仅由用户自行安装。使用前需向上游取得书面许可，并自行评估 AGPL 义务。 |
 
 ## 字体、图片、模板与生成资源
 

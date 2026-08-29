@@ -90,7 +90,7 @@ npm install -g @lucasygu/redbook
 |---|---|---|---|
 | `xhs-visual-director-skill` | 内页视觉一致性知识 | MIT | 随当前快照提供（含上游 LICENSE），无需重复 clone |
 | `ponyo-cover-anchor-system` | 封面专项 skill | 上游未声明 LICENSE | 不随仓库分发，只提供安装命令 |
-| `guizang-social-card-skill` | 结构化图文与版式校验 | AGPL-3.0 / 商业双许可 | 不随仓库分发，只提供安装命令 |
+| `guizang-social-card-skill` | 结构化图文与版式校验 | AGPL-3.0（未确认商业授权） | 不随仓库分发，不纳入公开跟踪树，只提供安装命令；使用前需向上游取得书面许可 |
 | `Puppeteer` | 本地 HTML 渲染与图片规范化 | Apache-2.0 | npm 安装；不跟踪 `node_modules` 或浏览器可执行文件 |
 | `OpenCLI` (`@jackwener/opencli`) | 只读研究首选 | Apache-2.0 | 仓库外安装，不分发会话数据 |
 | `redbook` (`@lucasygu/redbook`) | 只读研究增强 | MIT | 可选安装，认证数据留在仓库外 |
