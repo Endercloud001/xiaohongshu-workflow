@@ -8,7 +8,7 @@
 
 | 项目 / 资源 | 位置与用途 | 许可证 | 审计结论 |
 |---|---|---|---|
-| [xhs-visual-director-skill](https://github.com/ziguishian/xhs-visual-director-skill) | `.claude/skills/xhs-visual-director/`；内页视觉规划知识、模板与示例图 | MIT | 保留。快照包含上游 `LICENSE`，代码、文档、模板和 `assets/covers/` 示例图按该许可证再分发。 |
+| [xhs-visual-director-skill](https://github.com/ziguishian/xhs-visual-director-skill) | `.claude/skills/xhs-visual-director/`；内页视觉规划知识、模板与示例图 | MIT | 保留。上游基线提交为 [`5c730c688f2c7e64f798d611608997ffba43813d`](https://github.com/ziguishian/xhs-visual-director-skill/commit/5c730c688f2c7e64f798d611608997ffba43813d)（上游未发布 tag/release）；核验于 2026-08-29。24 个本地文件中 22 个与该提交对应 Git blob 一致，`README.md` 与扁平化后的 `SKILL.md` 含本地差异。快照校验见下文。快照包含上游 `LICENSE`，代码、文档、模板和 `assets/covers/` 示例图按该许可证再分发。 |
 | HTML 模板 | `02-规范/templates/` | 本项目根许可证 | 项目自有模板；未复制第三方字体或图片。设计思路的来源标注见对应规范。 |
 | 测试图片与 HTML | `06-产出/00000000-selftest/`、`06-产出/00000000-verify-fixture/` | 本项目根许可证 | 由仓库模板和测试脚本生成的确定性夹具；不作为第三方素材库。 |
 
@@ -23,7 +23,18 @@
 | [redbook](https://github.com/lucasygu/redbook) (`@lucasygu/redbook`) | 可选只读研究增强 | MIT | 可选全局安装；认证与 Cookie 留在仓库外。 |
 | [xiaohongshu-mcp](https://github.com/xpzouying/xiaohongshu-mcp) | 只读研究兜底 | Apache-2.0 | 作为独立本地服务安装；本仓库不分发服务端、可执行文件或登录数据。 |
 | [ponyo-cover-anchor-system](https://github.com/ponyodong2026/ponyo-cover-anchor-system) | 可选封面方法 skill | **上游未声明许可证** | 不得 vendoring 或随本仓库再分发；仅提供用户自行安装说明，目录已被 `.gitignore` 排除。 |
-| [guizang-social-card-skill](https://github.com/op7418/guizang-social-card-skill) | 可选结构化卡片与版式校验 | AGPL-3.0（未确认商业授权） | 不随仓库分发，不纳入公开跟踪树；仅由用户自行安装。使用前需向上游取得书面许可，并自行评估 AGPL 义务。 |
+| [guizang-social-card-skill](https://github.com/op7418/guizang-social-card-skill) | 可选结构化卡片与版式校验 | AGPL-3.0 | 本项目政策：不随仓库分发、不纳入公开跟踪树、不默认集成；仅由用户自行安装并遵守 AGPL-3.0。 |
+
+### `xhs-visual-director` 快照校验
+
+- 上游仓库：`https://github.com/ziguishian/xhs-visual-director-skill`
+- 上游基线：commit `5c730c688f2c7e64f798d611608997ffba43813d`；上游无 tag/release
+- 核验日期：2026-08-29
+- 本地快照：`.claude/skills/xhs-visual-director/`，共 24 个文件
+- 比对结果：22 个文件与上游基线对应 Git blob 一致；上游 `skill/` 在本地被扁平化，`README.md` 和扁平化后的 `SKILL.md` 含本地差异，因此本地目录不是上游提交的逐字节完整副本
+- 本地快照清单 SHA-256：`ca2dce958d17290e66381ba281f706a70edfb8694162f7a00348c2d8b4838592`
+
+校验值的生成口径：递归读取该目录的 24 个文件；对每个文件的原始字节计算 SHA-256，生成 `<小写哈希><两个空格><POSIX 相对路径>`；按相对路径排序，以 UTF-8（无 BOM）和 LF 拼接（末尾保留 LF），再对完整清单计算 SHA-256。该清单摘要用于识别本地快照，不把两处本地差异归属于上游提交。
 
 ## 字体、图片、模板与生成资源
 
@@ -35,7 +46,7 @@
 
 ## 维护规则
 
-1. 新增 vendored 目录前，必须确认许可证允许再分发，并同时保留版权声明与许可证原文。
+1. 新增或更新 vendored 目录前，必须确认许可证允许再分发，并同时记录精确上游 commit 或 tag、核验日期、可复现的本地快照校验值，以及校验算法与范围；同时保留版权声明和许可证原文。确实无法取得上游版本时，必须明确写“版本未知”，记录本地快照校验值、核验日期和无法确认版本的限制，不得省略或推测版本。
 2. 无许可证、来源不明、仅限商业授权或 copyleft 义务尚未评估的内容，默认改为仓库外安装，不进入公开跟踪树。
 3. `cookies*.json`、认证状态、浏览器 profile、`.env*`、可执行文件、压缩包、日志、`node_modules/` 和真实运行产物不得提交。
 4. 升级 npm 依赖后，重新检查 `package-lock.json` 中的许可证字段和新增包；字段缺失时不得直接推定为宽松许可证。

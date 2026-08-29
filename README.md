@@ -13,7 +13,7 @@
 
 ## 项目定位
 
-- 研究只读：OpenCLI 首选，redbook 增强，xiaohongshu-mcp 兜底
+- 研究只读：OpenCLI 是首选主后端；redbook 仅在已安装且入口检查通过时作为可选证据增强；xiaohongshu-mcp 是 OpenCLI 不可用时的兜底主后端
 - 视觉可插拔：封面 / 内页按风格注册表动态路由
 - 双闸门：研究后做 Topic Gate，成图后做 Visual Gate
 - 人工发布：仓库不包含自动发布、自动评论、自动点赞收藏能力
@@ -49,7 +49,12 @@ npm install
 `.claude/skills/xhs-visual-director/`，克隆本仓库后无需重复安装，也不要向这个非空目录再次执行
 `git clone`。其 MIT 许可证原文已随目录保留。
 
-其余视觉技能不随仓库分发。仅在目标目录不存在时安装：
+其余视觉技能不随仓库分发。安装前请先确认以下许可与项目政策边界：
+
+- `cover-anchor-system` 上游未声明许可证；在许可证状态明确前，本项目不 vendoring、不纳入公开跟踪树，也不默认集成。
+- `guizang-social-card-skill` 上游许可证可确认为 AGPL-3.0。本项目基于自身的公开分发政策，不将其 vendoring、不纳入公开跟踪树，也不默认集成；用户如自行安装，应自行遵守 AGPL-3.0。
+
+接受上述边界后，仅在目标目录不存在时安装：
 
 ```powershell
 if (-not (Test-Path -LiteralPath ".claude/skills/cover-anchor-system")) {
@@ -90,7 +95,7 @@ npm install -g @lucasygu/redbook
 |---|---|---|---|
 | `xhs-visual-director-skill` | 内页视觉一致性知识 | MIT | 随当前快照提供（含上游 LICENSE），无需重复 clone |
 | `ponyo-cover-anchor-system` | 封面专项 skill | 上游未声明 LICENSE | 不随仓库分发，只提供安装命令 |
-| `guizang-social-card-skill` | 结构化图文与版式校验 | AGPL-3.0（未确认商业授权） | 不随仓库分发，不纳入公开跟踪树，只提供安装命令；使用前需向上游取得书面许可 |
+| `guizang-social-card-skill` | 结构化图文与版式校验 | AGPL-3.0 | 本项目政策：不随仓库分发、不纳入公开跟踪树、不默认集成；仅提供用户自行安装命令 |
 | `Puppeteer` | 本地 HTML 渲染与图片规范化 | Apache-2.0 | npm 安装；不跟踪 `node_modules` 或浏览器可执行文件 |
 | `OpenCLI` (`@jackwener/opencli`) | 只读研究首选 | Apache-2.0 | 仓库外安装，不分发会话数据 |
 | `redbook` (`@lucasygu/redbook`) | 只读研究增强 | MIT | 可选安装，认证数据留在仓库外 |
