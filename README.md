@@ -45,13 +45,22 @@ npm install
 - 根据 `01-账号/账号档案.example.md` 创建 `01-账号/账号档案.md`
 - 根据 `05-验收/已发档案.example.jsonl` 创建 `05-验收/已发档案.jsonl`
 
-视觉技能安装方式：
+`xhs-visual-director` 已随当前仓库快照提供在
+`.claude/skills/xhs-visual-director/`，克隆本仓库后无需重复安装，也不要向这个非空目录再次执行
+`git clone`。
 
-```bash
-git clone https://github.com/ponyodong2026/ponyo-cover-anchor-system ".claude/skills/cover-anchor-system"
-git clone https://github.com/ziguishian/xhs-visual-director-skill ".claude/skills/xhs-visual-director"
-git clone https://github.com/op7418/guizang-social-card-skill ".claude/skills/guizang-social-card-skill"
-cd .claude/skills/guizang-social-card-skill && npm install
+其余视觉技能不随仓库分发。仅在目标目录不存在时安装：
+
+```powershell
+if (-not (Test-Path -LiteralPath ".claude/skills/cover-anchor-system")) {
+  git clone https://github.com/ponyodong2026/ponyo-cover-anchor-system ".claude/skills/cover-anchor-system"
+}
+if (-not (Test-Path -LiteralPath ".claude/skills/guizang-social-card-skill")) {
+  git clone https://github.com/op7418/guizang-social-card-skill ".claude/skills/guizang-social-card-skill"
+}
+Push-Location ".claude/skills/guizang-social-card-skill"
+npm install
+Pop-Location
 npx playwright install chromium
 ```
 
@@ -79,12 +88,17 @@ npm install -g @lucasygu/redbook
 
 | 项目 | 用途 | 许可 | 处理方式 |
 |---|---|---|---|
-| `xhs-visual-director-skill` | 内页视觉一致性知识 | MIT | 可本地安装，仓库可说明引用 |
+| `xhs-visual-director-skill` | 内页视觉一致性知识 | MIT | 随当前快照提供（含上游 LICENSE），无需重复 clone |
 | `ponyo-cover-anchor-system` | 封面专项 skill | 上游未声明 LICENSE | 不随仓库分发，只提供安装命令 |
 | `guizang-social-card-skill` | 结构化图文与版式校验 | AGPL-3.0 / 商业双许可 | 不随仓库分发，只提供安装命令 |
 | `redbook` | 研究增强与发布后健康检查 | 以上游仓库为准 | 可选安装 |
 
 仓库根 `LICENSE` 只适用于本仓库自有文件，不适用于 `.claude/skills/` 下第三方 skill。
+
+## 公开化基线说明
+
+公开内容以当前 Git 根提交及其追踪文件为准。仓库外的离线 bundle 与审计清单仅用于恢复和过程核验，
+可能对应公开化流程中的不同中间节点，不属于安装依赖，也不定义当前公开快照的内容。
 
 ## 免责声明
 
