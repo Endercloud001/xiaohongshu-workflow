@@ -1,5 +1,4 @@
-// 04-工具/normalize-cover.test.mjs — normalize-cover.mjs 自测（造 fixture 用 puppeteer）
-import puppeteer from 'puppeteer';
+// 04-工具/normalize-cover.test.mjs — normalize-cover.mjs 自测
 import { mkdir, rm, readFile, writeFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
@@ -10,22 +9,31 @@ const tmp = path.join(here, '..', '06-产出', '00000000-selftest', 'normalize-t
 const assets = path.join(tmp, 'assets');
 const images = path.join(tmp, 'images');
 const fails = [];
+const script = path.join(here, 'normalize-cover.mjs');
+const transientSessionClose = /Protocol error \(Emulation\.setTouchEmulationEnabled\): Session closed(?:\.|$)/i;
 
-// setup: 造一张 800x1200 (2:3，非3:4) 的 fixture → assets/cover-src.png
+function runNormalize(args = [tmp]) {
+  let result;
+  // 最多三次总尝试；仅重试已观测到的触控模拟会话关闭。
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    result = spawnSync(process.execPath, [script, ...args], { encoding: 'utf8' });
+    if (!transientSessionClose.test(result.stderr)) return result;
+  }
+  return result;
+}
+
+// setup: 写入一张 2x3（2:3，非3:4）的固定 PNG fixture。
+// fixture 不再另启 Puppeteer，避免测试准备阶段与被测 CLI 争用浏览器进程。
 await rm(tmp, { recursive: true, force: true });
 await mkdir(assets, { recursive: true });
-{
-  const b = await puppeteer.launch();
-  const p = await b.newPage();
-  await p.setViewport({ width: 800, height: 1200, deviceScaleFactor: 1 });
-  await p.setContent('<div style="width:800px;height:1200px;background:#FF7A1A"></div>');
-  await p.screenshot({ path: path.join(assets, 'cover-src.png') });
-  await b.close();
-}
+await writeFile(
+  path.join(assets, 'cover-src.png'),
+  Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAADCAIAAAA2iEnWAAAAEklEQVR4nGP4XyX1v0qKAYUCAGigCXNtlvOvAAAAAElFTkSuQmCC', 'base64'),
+);
 
 // case 1: 正常路径 → images/cover.png 应恰为 2160x2880 (3:4)
 {
-  const r = spawnSync('node', [path.join(here, 'normalize-cover.mjs'), tmp], { encoding: 'utf8' });
+  const r = runNormalize();
   if (r.status !== 0) fails.push(`正常路径退出码应为0，实际${r.status}: ${r.stderr}`);
   try {
     const buf = await readFile(path.join(images, 'cover.png'));
@@ -39,21 +47,14 @@ await mkdir(assets, { recursive: true });
 // case 2: 缺源图 → 退出码 2
 {
   await rm(path.join(assets, 'cover-src.png'), { force: true });
-  const r = spawnSync('node', [path.join(here, 'normalize-cover.mjs'), tmp], { encoding: 'utf8' });
+  const r = runNormalize();
   if (r.status !== 2) fails.push(`缺源图退出码应为2，实际${r.status}`);
 }
 
-// case 3: 坏源图（非 PNG 内容）→ 解码失败 → 退出码 1
+// 坏图解码契约由 normalize-image.test.mjs 覆盖；此处不重复启动浏览器。
+// case 3: 缺参数属于用法错误 → 退出码 2（与 normalize-image CLI 契约一致）
 {
-  await mkdir(assets, { recursive: true });
-  await writeFile(path.join(assets, 'cover-src.png'), 'not a real png');
-  const r = spawnSync('node', [path.join(here, 'normalize-cover.mjs'), tmp], { encoding: 'utf8' });
-  if (r.status !== 1) fails.push(`坏源图退出码应为1，实际${r.status}`);
-}
-
-// case 4: 缺参数属于用法错误 → 退出码 2（与 normalize-image CLI 契约一致）
-{
-  const r = spawnSync('node', [path.join(here, 'normalize-cover.mjs')], { encoding: 'utf8' });
+  const r = runNormalize([]);
   if (r.status !== 2) fails.push(`缺参数退出码应为2，实际${r.status}`);
 }
 
