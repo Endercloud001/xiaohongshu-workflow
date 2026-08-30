@@ -14,11 +14,19 @@ const allowedExamples = new Set([
 export function findForbiddenPath(input) {
   const file = input.replaceAll('\\', '/');
   const lower = file.toLowerCase();
-  if (allowedExamples.has(file)) return null;
+  const base = path.posix.basename(lower);
   if (/(^|\/)node_modules(\/|$)/i.test(file)) return 'node_modules';
-  if (/\.(exe|dll|msi|dmg|appimage)$/i.test(file)) return '可执行文件';
-  if (/(^|\/)(cookies?|storage[-_.]?state|auth[-_.]?state|web[-_.]?session)([./_-]|$)/i.test(file)) return 'Cookie / 会话文件';
-  if (/(^|\/)(browser[-_.]?profile|user[-_.]?data|\.redbook)(\/|$)/i.test(file)) return 'browser profile';
+  const isPublicExample = allowedExamples.has(file)
+    || /(?:^|\.)example(?:\.|$)/i.test(base)
+    || /(^|\/)fixtures?(\/|$)/i.test(file)
+    || /^(?:licen[cs]e|copying|notice)(?:\.|$)/i.test(base);
+  if (isPublicExample) return null;
+  if (/\.(?:exe|com|cmd|bat|dll|msi|dmg|appimage)$/i.test(file)) return '可执行文件';
+  if (/(^|\/)(?:cookies?|sessions?|storage[-_.]?state|auth[-_.]?state|web[-_.]?session)(?:[./_-]|$)/i.test(file)) return 'Cookie / 会话文件';
+  if (/(^|\/)(?:browser[-_.]?profile|profiles?|user[-_.]?data|\.redbook)(\/|$)/i.test(file)) return 'browser profile';
+  if (/(^|\/)(?:auth|authentication|credentials?)(\/|$)/i.test(file)) return '凭据 / 认证文件';
+  if (/(^|\/)(?:access[-_.]?token|refresh[-_.]?token|api[-_.]?key|secret|password|credentials?)(?:\.[^/]+)?$/i.test(file)) return '凭据 / 密钥文件';
+  if (/(^|\/)token\.txt$/i.test(file)) return '凭据 / 密钥文件';
   if (/^01-账号\//.test(file) && !/\.example\./i.test(file)) return '真实账号档案';
   if (/^05-验收\/已发档案/i.test(file) && !/\.example\./i.test(file)) return '真实发布记录';
   if (/^06-产出\//.test(file) && !/^06-产出\/00000000-(selftest|verify-fixture)\//.test(file)) return '真实运行产物';
@@ -30,8 +38,13 @@ export function findForbiddenPath(input) {
 export function findSecret(content) {
   const safe = /(?:example\.invalid|your[_-]?(?:api[_-]?key|token)|replace[_-]?me|<[^>]+>)/i;
   for (const line of content.split(/\r?\n/)) {
-    if (safe.test(line)) continue;
-    if (/\b(?:api[_-]?key|access[_-]?token|secret|password)\s*[:=]\s*["']?(?!\s|$)[A-Za-z0-9_./+=-]{16,}/i.test(line)) return '疑似凭据赋值';
+    const assignments = line.matchAll(/\b(?:api[_-]?key|access[_-]?token|refresh[_-]?token|token|client[_-]?secret|secret|password)\s*[:=]\s*(["']?)([^\s,"';}]+)/gi);
+    for (const assignment of assignments) {
+      const value = assignment[2];
+      const valueAndRest = line.slice(assignment.index + assignment[0].length - value.length);
+      const isCodeReference = !assignment[1] && (/^[A-Za-z_$][\w$]*\s*\(/.test(valueAndRest) || /^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+$/.test(value));
+      if (!safe.test(value) && !isCodeReference && value.length >= 4) return '疑似凭据赋值';
+    }
     if (/\b(?:sk|ghp|github_pat|xox[baprs])[-_][A-Za-z0-9_-]{16,}\b/.test(line)) return '疑似凭据 token';
     if (/-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/.test(line)) return '私钥内容';
   }
@@ -39,13 +52,37 @@ export function findSecret(content) {
 }
 
 export function findWriteCapabilityInvocation(content) {
-  for (const rawLine of content.split(/\r?\n/)) {
+  const operation = '(?:publish_content|publishContent|comment|reply|like|collect|uncollect|favorite|unfavorite|follow|unfollow)';
+  const executableLines = content.split(/\r?\n/).map(rawLine => {
     const line = rawLine.trim();
-    if (!line || /(?:不调用|不得调用|禁止|废弃|只允许出现在|不会自动|不包含)/.test(line)) continue;
-    if (/(?:await\s+|\.)(?:publish_content|comment|like|collect|favorite|follow)\s*\(/i.test(line)) return '写能力调用';
-    if (/^(?:\$\s*)?(?:npx\s+)?redbook\s+(?:post|comment|reply|batch-reply|collect|uncollect)\b/i.test(line)) return '写能力调用';
+    if (!/(?:不调用|不得调用|禁止|废弃|只允许出现在|不会自动|不包含)/.test(line)) return line;
+    const separator = Math.max(line.lastIndexOf(';'), line.lastIndexOf('；'));
+    return separator >= 0 ? line.slice(separator + 1).trim() : '';
+  }).filter(Boolean);
+  const executableContent = executableLines.join('\n');
+  if (new RegExp(`\\b(?:const|let|var)\\s+(\\w+)\\s*=\\s*[^;\\n]*(?:\\.|\\[\\s*["'])${operation}(?:["']\\s*\\])?\\s*;[\\s\\S]{0,500}?\\b\\1\\s*\\(`, 'i').test(executableContent)) return '写能力调用';
+  if (new RegExp(`\\b(?:const|let|var)\\s*\\{[^}]*\\b(publish_content|publishContent|comment|reply|like|collect|uncollect|favorite|unfavorite|follow|unfollow)\\b[^}]*\\}\\s*=.*?;[\\s\\S]{0,500}?\\b\\1\\s*\\(`, 'i').test(executableContent)) return '写能力调用';
+  if (new RegExp(`\\b(?:const|let|var)\\s*\\{[^}]*\\b${operation}\\s*:\\s*(\\w+)[^}]*\\}\\s*=.*?;[\\s\\S]{0,500}?\\b\\1\\s*\\(`, 'i').test(executableContent)) return '写能力调用';
+  for (const rawLine of executableLines) {
+    const line = rawLine.trim();
+    if (new RegExp(`\\b${operation}\\s*\\(`, 'i').test(line) && !new RegExp(`\\bfunction\\s+${operation}\\s*\\(`, 'i').test(line)) return '写能力调用';
+    if (new RegExp(`\\[\\s*["']${operation}["']\\s*\\]\\s*\\(`, 'i').test(line)) return '写能力调用';
+    if (new RegExp(`^(?:\\$\\s*)?(?:npx\\s+)?redbook\\s+(?:post|publish|publish_content|comment|reply|batch-reply|like|unlike|collect|uncollect|favorite|unfavorite|follow|unfollow)\\b`, 'i').test(line)) return '写能力调用';
   }
   return null;
+}
+
+const textExtensions = new Set([
+  '.bash', '.c', '.cjs', '.conf', '.config', '.cpp', '.css', '.csv', '.env', '.example',
+  '.fish', '.go', '.graphql', '.h', '.hpp', '.html', '.ini', '.java', '.js', '.json', '.jsonl',
+  '.jsx', '.kt', '.md', '.mjs', '.php', '.ps1', '.py', '.rb', '.rs', '.scss', '.sh', '.sql',
+  '.svelte', '.toml', '.ts', '.tsx', '.txt', '.vue', '.xml', '.yaml', '.yml', '.zsh',
+]);
+
+export function shouldAuditTextFile(file) {
+  return textExtensions.has(path.extname(file).toLowerCase())
+    || path.basename(file) === '.env.example'
+    || /^(?:dockerfile|makefile)$/i.test(path.basename(file));
 }
 
 async function main() {
@@ -62,10 +99,8 @@ async function main() {
     if (pathError) errors.push(`${file}: 禁入项（${pathError}）`);
   }
 
-  const textExtensions = new Set(['.cjs', '.env', '.example', '.html', '.json', '.jsonl', '.md', '.mjs', '.txt', '.yaml', '.yml']);
   for (const file of files) {
-    const extension = path.extname(file).toLowerCase();
-    if (!textExtensions.has(extension) && path.basename(file) !== '.env.example') continue;
+    if (!shouldAuditTextFile(file)) continue;
     let content;
     try { content = await readFile(path.join(root, file), 'utf8'); }
     catch { continue; }

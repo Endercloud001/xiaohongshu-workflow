@@ -2,18 +2,46 @@
 cookies.json
 cookies.*.json
 *.cookies.json
+cookie.json
+cookie.*.json
+*.cookie.json
+session.json
+session.*.json
+*.session.json
 web_session*
 auth-state*.json
+auth.json
+auth.*.json
+*.auth.json
+auth.txt
+*.auth.txt
+authentication.json
+authentication.*.json
+authentication.txt
+authentication.yaml
+authentication.yml
+credential.json
+credentials.json
+*.credential.json
+*.credentials.json
+credential.txt
+credentials.txt
 storage-state*.json
 storage_state*.json
 *credential*.json
 *credentials*.json
 *token*.json
+token.txt
+access-token.txt
+refresh-token.txt
+api-key.txt
+secret.txt
 .auth/
 .sessions/
 .cache/puppeteer/
 browser-profile/
 browser_profile/
+/profile/**
 user-data-dir/
 user_data_dir/
 .env
@@ -28,6 +56,9 @@ user_data_dir/
 
 # 本地运行时与下载物
 *.exe
+*.com
+*.cmd
+*.bat
 *.dll
 *.msi
 *.dmg
@@ -43,6 +74,22 @@ node_modules/
 .claude/settings.local.json
 .claude/skills/cover-anchor-system/
 .claude/skills/guizang-social-card-skill/
+
+# 公开样例、确定性夹具和许可证不受上述通用规则影响
+!*.example
+!*.example.*
+!fixtures/
+!fixtures/**
+!**/fixtures/
+!**/fixtures/**
+!/profile/*.example
+!/profile/*.example.*
+!/profile/fixtures/
+!/profile/fixtures/**
+!LICENSE*
+!LICENCE*
+!COPYING*
+!NOTICE*
 
 # 真实账号档案与发布记录；仅提交明确标记的虚构示例
 01-账号/*

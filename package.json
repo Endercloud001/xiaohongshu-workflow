@@ -9,7 +9,7 @@
     "node": ">=20 <25"
   },
   "scripts": {
-    "test": "node 04-工具/normalize-image.test.mjs && node 04-工具/normalize-cover.test.mjs && node 04-工具/install-path.test.mjs && node 04-工具/security-audit.test.mjs",
+    "test": "node 04-工具/normalize-image.test.mjs && node 04-工具/normalize-cover.test.mjs && node 04-工具/install-path.test.mjs && node 04-工具/check-config.test.mjs && node 04-工具/security-audit.test.mjs",
     "check:config": "node 04-工具/check-config.mjs",
     "audit:security": "node 04-工具/security-audit.mjs",
     "smoke": "node 04-工具/smoke.mjs",
