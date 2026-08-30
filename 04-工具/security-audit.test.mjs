@@ -36,7 +36,7 @@ test('rejects local authentication and runtime paths', () => {
   assert.equal(findForbiddenPath('01-账号/账号档案.example.md'), null);
   assert.equal(findForbiddenPath('fixtures/session.json'), null);
   assert.equal(findForbiddenPath('examples/token.txt.example'), null);
-  assert.equal(findForbiddenPath('LICENSE.key'), null);
+  assert.match(findForbiddenPath('LICENSE.key') ?? '', /密钥|证书/i);
   assert.equal(findForbiddenPath('src/profile.js'), null);
   assert.equal(findForbiddenPath('src/token.js'), null);
   assert.equal(findForbiddenPath('examples/xhs-cookie.json.example'), null);
@@ -74,6 +74,7 @@ test('only permits complete approved credential placeholders', () => {
     value('pass', 'word=replace_me-but-real'),
     value('Author', 'ization: Bearer abc<token>xyz'),
     value('to', 'ken=https://example.invalid/demo-real-token'),
+    value('to', 'ken=${TOKEN}-real-secret'),
   ]) assert.match(findSecret(content) ?? '', /疑似凭据/, content);
 
   for (const content of [
@@ -83,6 +84,18 @@ test('only permits complete approved credential placeholders', () => {
     value('Author', 'ization: Bearer <token>'),
     value('to', 'ken=${TOKEN}'),
   ]) assert.equal(findSecret(content), null, content);
+});
+
+test('sensitive key and certificate extensions override example, fixture and license exceptions', () => {
+  for (const file of [
+    'LICENSE.key',
+    'fixtures/demo.pem',
+    'fixtures/LICENSE.p12',
+    'examples/certificate.example.pfx',
+  ]) assert.match(findForbiddenPath(file) ?? '', /密钥|证书/i, file);
+
+  assert.equal(findForbiddenPath('LICENSE'), null);
+  assert.equal(findForbiddenPath('fixtures/README.md'), null);
 });
 
 test('detects common API key, JWT, AWS, bearer, password and embedded URL credentials', () => {
@@ -157,6 +170,22 @@ test('detects MCP and SDK write dispatch while permitting read calls and inert e
     `const sample = "client.callTool({name:'${op('publish_', 'content')}'})"`,
     `不调用 client.callTool({name:'${op('publish_', 'content')}'})。`,
   ]) assert.equal(findWriteCapabilityInvocation(safeCall), null, safeCall);
+});
+
+test('detects semicolonless aliases and variable write dispatch conservatively', () => {
+  const op = (...parts) => parts.join('');
+  for (const call of [
+    `const fn = client.${op('li', 'ke')}\nawait fn(note)`,
+    `const fn = client.${op('li', 'ke')}\nawait fn(note)\n`,
+    `const operation = '${op('com', 'ment')}'\nclient.callTool(operation, payload)`,
+    `const operation = '${op('fol', 'low')}'; mcp.invoke(operation, payload)`,
+  ]) assert.match(findWriteCapabilityInvocation(call) ?? '', /写能力调用/, call);
+
+  for (const inert of [
+    `// const operation = '${op('com', 'ment')}'\n// client.callTool(operation, payload)`,
+    `/* const fn = client.${op('li', 'ke')}\nawait fn(note) */`,
+    `const sample = "const operation = '${op('com', 'ment')}'; client.callTool(operation, payload)"`,
+  ]) assert.equal(findWriteCapabilityInvocation(inert), null, inert);
 });
 
 test('CLI audits staged index content rather than a differing worktree', async () => {

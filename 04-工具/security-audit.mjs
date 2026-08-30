@@ -15,6 +15,7 @@ export function findForbiddenPath(input) {
   const lower = file.toLowerCase();
   const base = path.posix.basename(lower);
   if (/(^|\/)node_modules(\/|$)/i.test(file)) return 'node_modules';
+  if (/\.(?:pem|key|p12|pfx|crt|cer|der|csr|pkcs8|pkcs12|jks|keystore)$/i.test(file)) return '密钥 / 证书文件';
   const isPublicExample = allowedExamples.has(file)
     || /(?:^|\.)example(?:\.|$)/i.test(base)
     || /(^|\/)fixtures?(\/|$)/i.test(file)
@@ -31,7 +32,7 @@ export function findForbiddenPath(input) {
   if (/^05-验收\/已发档案/i.test(file) && !/\.example\./i.test(file)) return '真实发布记录';
   if (/^06-产出\//.test(file) && !/^06-产出\/00000000-(selftest|verify-fixture)\//.test(file)) return '真实运行产物';
   if (/(^|\/)\.env(\.|$)/i.test(file) && lower !== '.env.example') return '环境密钥文件';
-  if (/\.(pem|key|p12|pfx|secret|secrets)$/i.test(file)) return '密钥文件';
+  if (/\.(?:secret|secrets)$/i.test(file)) return '密钥文件';
   return null;
 }
 
@@ -40,7 +41,11 @@ export function findSecret(content) {
   for (const line of content.split(/\r?\n/)) {
     const assignments = line.matchAll(/(?<![\w])(?:_authToken|(?:[A-Z0-9]+[_-])?api[_-]?key|aws[_-]access[_-]key[_-]id|aws[_-]secret[_-]access[_-]key|access[_-]?token|refresh[_-]?token|token|client[_-]?secret|secret|password)\s*[:=]\s*(["']?)(\$\{[A-Z][A-Z0-9_]*\}|[^\s,"';}]+)/gi);
     for (const assignment of assignments) {
-      const value = assignment[2];
+      let value = assignment[2];
+      if (/^\$\{[A-Z][A-Z0-9_]*\}$/i.test(value)) {
+        const suffix = line.slice(assignment.index + assignment[0].length).match(/^[^\s,"';}]*/)?.[0] ?? '';
+        value += suffix;
+      }
       const valueAndRest = line.slice(assignment.index + assignment[0].length - value.length);
       const isCodeReference = !assignment[1] && (/^[A-Za-z_$][\w$]*\s*\(/.test(valueAndRest) || /^(?:process\.env|config|options?|args?)\.[A-Za-z_$][\w$]*$/.test(value));
       if (!approvedPlaceholder.test(value) && !isCodeReference && value.length >= 4) return '疑似凭据赋值';
@@ -62,7 +67,8 @@ export function findWriteCapabilityInvocation(content) {
   const executableLines = withoutBlockComments.split(/\r?\n/).map(rawLine => {
     let line = rawLine.replace(/(^|\s)\/\/.*$/, '$1').trim();
     if (!line || /^(?:#|>|[-*]\s)/.test(line)) return '';
-    if (/^(?:const|let|var)\s+\w+\s*=\s*(["'`]).*\1\s*;?$/.test(line)) return '';
+    if (/^(?:const|let|var)\s+\w+\s*=\s*(["'`]).*\1\s*;?$/.test(line)
+      && !new RegExp(`^(?:const|let|var)\\s+\\w+\\s*=\\s*["']${operation}["'](?:\\s*;)?$`, 'i').test(line)) return '';
     if (/^(?:不调用|不得调用|禁止|废弃|只读|只允许出现在|不会自动|不包含)[^;；]*`[^`]+`[^;；]*[。！？]?$/.test(line)) return '';
     if (/^(?:不调用|不得调用|禁止|废弃|只读|只允许出现在|不会自动|不包含)[^;；]*$/.test(line)) return '';
     return line;
@@ -72,9 +78,10 @@ export function findWriteCapabilityInvocation(content) {
   if (new RegExp(`\\bcallTool\\s*\\(\\s*["']${operation}["']`, 'i').test(executableContent)) return '写能力调用';
   if (new RegExp(`\\binvoke\\s*\\(\\s*["']${operation}["']`, 'i').test(executableContent)) return '写能力调用';
   if (/\b(?:client|sdk|redbook|mcp)\s*\[\s*[A-Za-z_$][\w$]*\s*\]\s*\(/i.test(executableContent)) return '写能力调用';
-  if (new RegExp(`\\b(?:const|let|var)\\s+(\\w+)\\s*=\\s*[^;\\n]*(?:\\.|\\[\\s*["'])${operation}(?:["']\\s*\\])?\\s*;[\\s\\S]{0,500}?\\b\\1\\s*\\(`, 'i').test(executableContent)) return '写能力调用';
+  if (new RegExp(`\\b(?:const|let|var)\\s+(\\w+)\\s*=\\s*[^;\\n]*(?:\\.|\\[\\s*["'])${operation}(?:["']\\s*\\])?\\s*(?:;|\\r?\\n)[\\s\\S]{0,500}?\\b\\1\\s*\\(`, 'i').test(executableContent)) return '写能力调用';
   if (new RegExp(`\\b(?:const|let|var)\\s*\\{[^}]*\\b(publish_content|publishContent|comment|reply|like|collect|uncollect|favorite|unfavorite|follow|unfollow)\\b[^}]*\\}\\s*=.*?;[\\s\\S]{0,500}?\\b\\1\\s*\\(`, 'i').test(executableContent)) return '写能力调用';
   if (new RegExp(`\\b(?:const|let|var)\\s*\\{[^}]*\\b${operation}\\s*:\\s*(\\w+)[^}]*\\}\\s*=.*?;[\\s\\S]{0,500}?\\b\\1\\s*\\(`, 'i').test(executableContent)) return '写能力调用';
+  if (new RegExp(`\\b(?:const|let|var)\\s+(\\w+)\\s*=\\s*["']${operation}["']\\s*(?:;|\\r?\\n)[\\s\\S]{0,500}?\\b(?:callTool|invoke)\\s*\\(\\s*\\1\\b`, 'i').test(executableContent)) return '写能力调用';
   for (const rawLine of executableLines) {
     const line = rawLine.trim();
     if (new RegExp(`\\b${operation}\\s*\\(`, 'i').test(line) && !new RegExp(`\\bfunction\\s+${operation}\\s*\\(`, 'i').test(line)) return '写能力调用';
