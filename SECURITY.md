@@ -36,4 +36,6 @@ npm run smoke
 npm run audit:security
 ```
 
-`audit:security` 只读取 Git 已跟踪文件，检查禁入路径、常见凭据模式和可执行写能力调用。它是最低限度的确定性防线，不能替代提交者对图片、二进制、历史对象和上下文泄露的人工复核。
+`audit:security` 明确以待提交的 Git index 为扫描对象：用 `git ls-files --cached` 取 index 路径，并用 `git show :path` 读取每个文件的暂存内容，不读工作树副本。无法列出 index 或无法读取任一 index 对象时，审计以失败退出，不会跳过该文件。
+
+本地提交前，应先暂存候选变更再运行审计；它不检查未暂存的工作树内容。CI 的标准 checkout 会让 index 与当前 `HEAD` 一致，因而可直接扫描当前提交；若 CI 使用裸仓库、未建立 index，或想扫描任意历史对象，本命令不适用并会安全失败。审计检查禁入路径、常见 API key / JWT / AWS / Bearer / 密码等凭据模式，以及可执行写能力调用。它是最低限度的确定性防线，不能替代提交者对图片、二进制、历史对象和上下文泄露的人工复核。

@@ -1,4 +1,8 @@
 import assert from 'node:assert/strict';
+import { mkdtemp, mkdir, copyFile, writeFile } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
 import {
@@ -63,6 +67,37 @@ test('detects credential-like content without flagging placeholders', () => {
   assert.equal(findSecret(['Author', 'ization: Bearer <token>'].join('')), null);
 });
 
+test('only permits complete approved credential placeholders', () => {
+  const value = (...parts) => parts.join('');
+  for (const content of [
+    value('API_', 'KEY=prefix-your_api_key-suffix'),
+    value('pass', 'word=replace_me-but-real'),
+    value('Author', 'ization: Bearer abc<token>xyz'),
+    value('to', 'ken=https://example.invalid/demo-real-token'),
+  ]) assert.match(findSecret(content) ?? '', /疑似凭据/, content);
+
+  for (const content of [
+    value('API_', 'KEY=your_api_key'),
+    value('API_', 'KEY=your-api-key-here'),
+    value('pass', 'word=replace_me'),
+    value('Author', 'ization: Bearer <token>'),
+    value('to', 'ken=${TOKEN}'),
+  ]) assert.equal(findSecret(content), null, content);
+});
+
+test('detects common API key, JWT, AWS, bearer, password and embedded URL credentials', () => {
+  const value = (...parts) => parts.join('');
+  const cases = [
+    value('OPENAI_API_', 'KEY=sk-proj-', '1234567890abcdefghijklmnop'),
+    value('to', 'ken=eyJhbGciOiJIUzI1NiJ9.', 'eyJzdWIiOiIxMjM0NTY3ODkwIn0.', 'signature123456'),
+    value('AWS_ACCESS_', 'KEY_ID=AKIA', 'IOSFODNN7EXAMPLE'),
+    value('Author', 'ization: Bearer ', 'abcdefghijklmnopqrstuvwxyz123456'),
+    value('pass', 'word=correct-horse-battery-staple'),
+    value('endpoint=https://alice:', 'real-password@localhost:18060/mcp'),
+  ];
+  for (const content of cases) assert.match(findSecret(content) ?? '', /疑似凭据|私钥/, content);
+});
+
 test('detects executable publish and interaction calls but permits prohibition docs', () => {
   const publishCall = ['await client.', 'publish_content', '(payload)'].join('');
   const interactionCall = ['redbook ', 'post', ' --title demo'].join('');
@@ -86,6 +121,23 @@ test('detects executable publish and interaction calls but permits prohibition d
   assert.equal(findWriteCapabilityInvocation(['禁止 client.li', 'ke(note)'].join('')), null);
 });
 
+test('prohibition wording cannot hide executable write calls', () => {
+  const call = (...parts) => parts.join('');
+  for (const content of [
+    call('禁止自动发布; client.li', 'ke(note)'),
+    call('const policy = "只读"; client.li', 'ke(note)'),
+    call('/* 禁止调用 */ client.li', 'ke(note)'),
+    call('client[opera', 'tion](note)'),
+    call('const operation = "li', 'ke"; client[opera', 'tion](note)'),
+  ]) assert.match(findWriteCapabilityInvocation(content) ?? '', /写能力调用/, content);
+
+  for (const content of [
+    call('// client.li', 'ke(note)'),
+    call('/* client.li', 'ke(note) */'),
+    call('禁止调用 `client.li', 'ke(note)`。'),
+  ]) assert.equal(findWriteCapabilityInvocation(content), null, content);
+});
+
 test('detects MCP and SDK write dispatch while permitting read calls and inert examples', () => {
   const op = (...parts) => parts.join('');
   for (const call of [
@@ -105,4 +157,34 @@ test('detects MCP and SDK write dispatch while permitting read calls and inert e
     `const sample = "client.callTool({name:'${op('publish_', 'content')}'})"`,
     `不调用 client.callTool({name:'${op('publish_', 'content')}'})。`,
   ]) assert.equal(findWriteCapabilityInvocation(safeCall), null, safeCall);
+});
+
+test('CLI audits staged index content rather than a differing worktree', async () => {
+  const repo = await mkdtemp(path.join(os.tmpdir(), 'xhs-security-audit-'));
+  await mkdir(path.join(repo, '04-工具'));
+  await copyFile(new URL('./security-audit.mjs', import.meta.url), path.join(repo, '04-工具/security-audit.mjs'));
+  const runGit = (...args) => spawnSync('git', args, { cwd: repo, encoding: 'utf8' });
+  assert.equal(runGit('init').status, 0);
+  await writeFile(path.join(repo, 'safe.txt'), ['API_', 'KEY=your_api_key\n'].join(''));
+  assert.equal(runGit('add', '.').status, 0);
+  await writeFile(path.join(repo, 'safe.txt'), 'nothing sensitive in the worktree\n');
+
+  const audit = spawnSync(process.execPath, ['04-工具/security-audit.mjs'], { cwd: repo, encoding: 'utf8' });
+  assert.equal(audit.status, 0, audit.stderr);
+
+  await writeFile(path.join(repo, 'safe.txt'), ['API_', 'KEY=real-staged-secret-value\n'].join(''));
+  assert.equal(runGit('add', 'safe.txt').status, 0);
+  await writeFile(path.join(repo, 'safe.txt'), ['API_', 'KEY=your_api_key\n'].join(''));
+  const rejected = spawnSync(process.execPath, ['04-工具/security-audit.mjs'], { cwd: repo, encoding: 'utf8' });
+  assert.equal(rejected.status, 1, rejected.stdout + rejected.stderr);
+  assert.match(rejected.stderr, /safe\.txt: 疑似凭据/);
+});
+
+test('CLI fails safely when the Git index cannot be read', async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'xhs-security-no-index-'));
+  await mkdir(path.join(directory, '04-工具'));
+  await copyFile(new URL('./security-audit.mjs', import.meta.url), path.join(directory, '04-工具/security-audit.mjs'));
+  const audit = spawnSync(process.execPath, ['04-工具/security-audit.mjs'], { cwd: directory, encoding: 'utf8' });
+  assert.equal(audit.status, 2, audit.stdout + audit.stderr);
+  assert.match(audit.stderr, /Git index/);
 });

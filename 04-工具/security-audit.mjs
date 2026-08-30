@@ -1,4 +1,3 @@
-import { readFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -37,19 +36,21 @@ export function findForbiddenPath(input) {
 }
 
 export function findSecret(content) {
-  const safe = /(?:example\.invalid|your[_-]?(?:api[_-]?key|token)|replace[_-]?me|<[^>]+>)/i;
+  const approvedPlaceholder = /^(?:your[_-]?(?:api[_-]?key|token)(?:[_-]here)?|replace[_-]?me|<(?:(?:api[_-]?)?key|token|secret|password)>|\$\{[A-Z][A-Z0-9_]*\})$/i;
   for (const line of content.split(/\r?\n/)) {
-    const assignments = line.matchAll(/(?<![\w])(?:_authToken|api[_-]?key|access[_-]?token|refresh[_-]?token|token|client[_-]?secret|secret|password)\s*[:=]\s*(["']?)(\$\{[A-Z][A-Z0-9_]*\}|[^\s,"';}]+)/gi);
+    const assignments = line.matchAll(/(?<![\w])(?:_authToken|(?:[A-Z0-9]+[_-])?api[_-]?key|aws[_-]access[_-]key[_-]id|aws[_-]secret[_-]access[_-]key|access[_-]?token|refresh[_-]?token|token|client[_-]?secret|secret|password)\s*[:=]\s*(["']?)(\$\{[A-Z][A-Z0-9_]*\}|[^\s,"';}]+)/gi);
     for (const assignment of assignments) {
       const value = assignment[2];
       const valueAndRest = line.slice(assignment.index + assignment[0].length - value.length);
-      const isCodeReference = !assignment[1] && (/^[A-Za-z_$][\w$]*\s*\(/.test(valueAndRest) || /^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+$/.test(value));
-      const isEnvironmentReference = /^\$\{[A-Z][A-Z0-9_]*\}$/.test(value);
-      if (!safe.test(value) && !isCodeReference && !isEnvironmentReference && value.length >= 4) return '疑似凭据赋值';
+      const isCodeReference = !assignment[1] && (/^[A-Za-z_$][\w$]*\s*\(/.test(valueAndRest) || /^(?:process\.env|config|options?|args?)\.[A-Za-z_$][\w$]*$/.test(value));
+      if (!approvedPlaceholder.test(value) && !isCodeReference && value.length >= 4) return '疑似凭据赋值';
     }
     const bearer = line.match(/\bAuthorization\s*:\s*Bearer\s+([^\s,"';}]+)/i);
-    if (bearer && !safe.test(bearer[1]) && !/^\$\{[A-Z][A-Z0-9_]*\}$/.test(bearer[1])) return '疑似凭据 Bearer token';
+    if (bearer && !approvedPlaceholder.test(bearer[1])) return '疑似凭据 Bearer token';
     if (/\b(?:sk|ghp|github_pat|xox[baprs])[-_][A-Za-z0-9_-]{16,}\b/.test(line)) return '疑似凭据 token';
+    if (/\bAKIA[0-9A-Z]{16}\b/.test(line)) return '疑似凭据 AWS access key';
+    if (/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/.test(line)) return '疑似凭据 JWT';
+    if (/\b(?:https?|wss?):\/\/[^\s/@:]+:[^\s/@]+@/i.test(line)) return '疑似凭据 URL';
     if (/-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/.test(line)) return '私钥内容';
   }
   return null;
@@ -57,17 +58,20 @@ export function findSecret(content) {
 
 export function findWriteCapabilityInvocation(content) {
   const operation = '(?:publish_content|publishContent|post|comment|reply|like|collect|uncollect|favorite|unfavorite|follow|unfollow)';
-  const executableLines = content.split(/\r?\n/).map(rawLine => {
-    const line = rawLine.trim();
+  const withoutBlockComments = content.replace(/\/\*[\s\S]*?\*\//g, ' ');
+  const executableLines = withoutBlockComments.split(/\r?\n/).map(rawLine => {
+    let line = rawLine.replace(/(^|\s)\/\/.*$/, '$1').trim();
+    if (!line || /^(?:#|>|[-*]\s)/.test(line)) return '';
     if (/^(?:const|let|var)\s+\w+\s*=\s*(["'`]).*\1\s*;?$/.test(line)) return '';
-    if (!/(?:不调用|不得调用|禁止|废弃|只允许出现在|不会自动|不包含)/.test(line)) return line;
-    const separator = Math.max(line.lastIndexOf(';'), line.lastIndexOf('；'));
-    return separator >= 0 ? line.slice(separator + 1).trim() : '';
+    if (/^(?:不调用|不得调用|禁止|废弃|只读|只允许出现在|不会自动|不包含)[^;；]*`[^`]+`[^;；]*[。！？]?$/.test(line)) return '';
+    if (/^(?:不调用|不得调用|禁止|废弃|只读|只允许出现在|不会自动|不包含)[^;；]*$/.test(line)) return '';
+    return line;
   }).filter(Boolean);
   const executableContent = executableLines.join('\n');
   if (new RegExp(`\\bcallTool\\s*\\(\\s*\\{[^}]{0,300}?\\bname\\s*:\\s*["']${operation}["']`, 'i').test(executableContent)) return '写能力调用';
   if (new RegExp(`\\bcallTool\\s*\\(\\s*["']${operation}["']`, 'i').test(executableContent)) return '写能力调用';
   if (new RegExp(`\\binvoke\\s*\\(\\s*["']${operation}["']`, 'i').test(executableContent)) return '写能力调用';
+  if (/\b(?:client|sdk|redbook|mcp)\s*\[\s*[A-Za-z_$][\w$]*\s*\]\s*\(/i.test(executableContent)) return '写能力调用';
   if (new RegExp(`\\b(?:const|let|var)\\s+(\\w+)\\s*=\\s*[^;\\n]*(?:\\.|\\[\\s*["'])${operation}(?:["']\\s*\\])?\\s*;[\\s\\S]{0,500}?\\b\\1\\s*\\(`, 'i').test(executableContent)) return '写能力调用';
   if (new RegExp(`\\b(?:const|let|var)\\s*\\{[^}]*\\b(publish_content|publishContent|comment|reply|like|collect|uncollect|favorite|unfavorite|follow|unfollow)\\b[^}]*\\}\\s*=.*?;[\\s\\S]{0,500}?\\b\\1\\s*\\(`, 'i').test(executableContent)) return '写能力调用';
   if (new RegExp(`\\b(?:const|let|var)\\s*\\{[^}]*\\b${operation}\\s*:\\s*(\\w+)[^}]*\\}\\s*=.*?;[\\s\\S]{0,500}?\\b\\1\\s*\\(`, 'i').test(executableContent)) return '写能力调用';
@@ -94,9 +98,9 @@ export function shouldAuditTextFile(file) {
 }
 
 async function main() {
-  const listed = spawnSync('git', ['ls-files', '-z'], { cwd: root, encoding: 'utf8' });
+  const listed = spawnSync('git', ['ls-files', '--cached', '-z'], { cwd: root, encoding: 'utf8' });
   if (listed.status !== 0) {
-    process.stderr.write(listed.stderr || 'FAIL 无法读取 Git 跟踪文件\n');
+    process.stderr.write(`FAIL 无法读取 Git index\n${listed.stderr || ''}`);
     process.exit(2);
   }
 
@@ -109,9 +113,12 @@ async function main() {
 
   for (const file of files) {
     if (!shouldAuditTextFile(file)) continue;
-    let content;
-    try { content = await readFile(path.join(root, file), 'utf8'); }
-    catch { continue; }
+    const shown = spawnSync('git', ['show', `:${file}`], { cwd: root, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 });
+    if (shown.status !== 0) {
+      process.stderr.write(`FAIL 无法读取 Git index 中的 ${file}\n${shown.stderr || ''}`);
+      process.exit(2);
+    }
+    const content = shown.stdout;
     const secret = findSecret(content);
     if (secret) errors.push(`${file}: ${secret}`);
     const invocation = findWriteCapabilityInvocation(content);
@@ -122,7 +129,7 @@ async function main() {
     errors.forEach(error => console.error(`FAIL ${error}`));
     process.exit(1);
   }
-  console.log(`PASS 公开树安全审计通过（${files.length} 个跟踪文件；零凭据、零写能力调用）`);
+  console.log(`PASS 待提交 Git index 安全审计通过（${files.length} 个 index 文件；零凭据、零写能力调用）`);
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await main();
