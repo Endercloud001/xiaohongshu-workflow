@@ -50,7 +50,7 @@ Topic Gate 只回答“这个题是否有证据、有区分度且适合做成图
 - `03-skills/`：主控、路由规则、节点 prompt
 - `04-工具/`：确定性脚本与工具边界
 - `05-验收/`：检查清单与模板索引
-- `06-产出/`：运行产物；仓库只保留 selftest、verify fixture 与一个展示样例
+- `06-产出/`：运行产物；公开树只保留 `00000000-selftest` 与 `00000000-verify-fixture`
 
 公开仓库与本地运行数据严格分开：`账号档案.md`、`已发档案.jsonl`、Cookie、认证状态、可执行文件、`node_modules/` 和真实 run 均由 `.gitignore` 排除。公开示例只能使用明确标注的虚构模板或确定性测试夹具，不能复制真实账号档案、Cookie 内容或真实产出充当示例。
 
@@ -81,7 +81,7 @@ Puppeteer 当前精确锁定为 23.11.1，以复现已验证的 Windows/Chrome 1
 
 - `npm ci` 下载 Chromium 失败：检查代理、证书和网络策略后重试；不要提交下载后的浏览器或整个 `node_modules/`。
 - Node 版本不在 `>=20 <25`：切换到 `.nvmrc` 指定的 Node 20，再重新执行 `npm ci`。
-- `npm run check:config` 报本地私有文件缺失：按下面的 example 文件创建本地副本；不要修改 example 来保存真实信息。
+- `npm run check:config` 失败：该命令只检查 Node 版本、`package-lock.json`、`.env.example`、`06-产出/00000000-verify-fixture/copy.md` 和 `XHS_MCP_URL` 的 HTTP(S) URL 格式，不检查私有账号档案或已发档案，也无需凭据；请按具体 `FAIL` 信息修复对应基础配置。
 - `npm run smoke` 失败：保留完整输出，先重新执行 `npm test` 区分依赖/脚本问题与 fixture 问题。
 - 可选研究后端不可用：不影响基础四条命令；真实工作流会记录 `degraded`，而不是越过只读边界或尝试自动发布。
 
