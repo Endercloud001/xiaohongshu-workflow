@@ -64,9 +64,27 @@ export function findSecret(content) {
 export function findWriteCapabilityInvocation(content) {
   const operation = '(?:publish_content|publishContent|post|comment|reply|like|collect|uncollect|favorite|unfavorite|follow|unfollow)';
   const withoutBlockComments = content.replace(/\/\*[\s\S]*?\*\//g, ' ');
+  let inMarkdownFence = false;
+  let markdownFence = '';
   const executableLines = withoutBlockComments.split(/\r?\n/).map(rawLine => {
+    const fence = rawLine.match(/^\s*(?:>\s*)?(?:(?:[-*+]\s+|\d+\.\s+))?(`{3,}|~{3,})/);
+    if (fence) {
+      const marker = fence[1][0];
+      if (!inMarkdownFence) {
+        inMarkdownFence = true;
+        markdownFence = marker;
+      } else if (marker === markdownFence) {
+        inMarkdownFence = false;
+        markdownFence = '';
+      }
+      return '';
+    }
+    if (inMarkdownFence) return '';
     let line = rawLine.replace(/(^|\s)\/\/.*$/, '$1').trim();
-    if (!line || /^(?:#|>|[-*]\s)/.test(line)) return '';
+    line = line.replace(/(`+)[^`]*\1/g, ' ');
+    if (!line || /^#/.test(line)) return '';
+    line = line.replace(/^(?:>\s*)?(?:(?:[-*+]\s+|\d+\.\s+))?/, '').trim();
+    if (!line) return '';
     if (/^(?:const|let|var)\s+\w+\s*=\s*(["'`]).*\1\s*;?$/.test(line)
       && !new RegExp(`^(?:const|let|var)\\s+\\w+\\s*=\\s*["']${operation}["'](?:\\s*;)?$`, 'i').test(line)) return '';
     if (/^(?:不调用|不得调用|禁止|废弃|只读|只允许出现在|不会自动|不包含)[^;；]*`[^`]+`[^;；]*[。！？]?$/.test(line)) return '';
@@ -77,6 +95,7 @@ export function findWriteCapabilityInvocation(content) {
   if (new RegExp(`\\bcallTool\\s*\\(\\s*\\{[^}]{0,300}?\\bname\\s*:\\s*["']${operation}["']`, 'i').test(executableContent)) return '写能力调用';
   if (new RegExp(`\\bcallTool\\s*\\(\\s*["']${operation}["']`, 'i').test(executableContent)) return '写能力调用';
   if (new RegExp(`\\binvoke\\s*\\(\\s*["']${operation}["']`, 'i').test(executableContent)) return '写能力调用';
+  if (/\b(?:callTool|invoke)\s*\(\s*(?!["'`{])(?:[A-Za-z_$][\w$]*)(?:\s*(?:\.[A-Za-z_$][\w$]*|\[[^\]]+\]|\([^)]*\)))*/i.test(executableContent)) return '写能力调用';
   if (/\b(?:client|sdk|redbook|mcp)\s*\[\s*[A-Za-z_$][\w$]*\s*\]\s*\(/i.test(executableContent)) return '写能力调用';
   if (new RegExp(`\\b(?:const|let|var)\\s+(\\w+)\\s*=\\s*[^;\\n]*(?:\\.|\\[\\s*["'])${operation}(?:["']\\s*\\])?\\s*(?:;|\\r?\\n)[\\s\\S]{0,500}?\\b\\1\\s*\\(`, 'i').test(executableContent)) return '写能力调用';
   if (new RegExp(`\\b(?:const|let|var)\\s*\\{[^}]*\\b(publish_content|publishContent|comment|reply|like|collect|uncollect|favorite|unfavorite|follow|unfollow)\\b[^}]*\\}\\s*=.*?;[\\s\\S]{0,500}?\\b\\1\\s*\\(`, 'i').test(executableContent)) return '写能力调用';

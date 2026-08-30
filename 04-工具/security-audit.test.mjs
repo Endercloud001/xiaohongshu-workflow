@@ -188,6 +188,44 @@ test('detects semicolonless aliases and variable write dispatch conservatively',
   ]) assert.equal(findWriteCapabilityInvocation(inert), null, inert);
 });
 
+test('flags runtime-variable callTool and invoke dispatch when the operation cannot be resolved statically', () => {
+  const dispatch = (receiver, method, argument) => `${receiver}.${method}(${argument}, payload)`;
+  for (const call of [
+    dispatch('client', ['call', 'Tool'].join(''), 'operation'),
+    `await ${dispatch('client', 'invoke', 'operation')}`,
+    dispatch('sdk', ['call', 'Tool'].join(''), 'toolName'),
+    dispatch('mcp', 'invoke', 'getOperation()'),
+  ]) assert.match(findWriteCapabilityInvocation(call) ?? '', /写能力调用/, call);
+
+  for (const safeCall of [
+    "client.callTool('get_note', noteId)",
+    "client.invoke('search_notes', query)",
+  ]) assert.equal(findWriteCapabilityInvocation(safeCall), null, safeCall);
+});
+
+test('keeps Markdown inline and fenced examples inert without hiding adjacent executable code', () => {
+  const op = (...parts) => parts.join('');
+  const dispatch = (method, argument = 'operation') => `client.${method}(${argument}, payload)`;
+  const dynamicCall = dispatch(['call', 'Tool'].join(''));
+  const dynamicInvoke = dispatch('invoke');
+  for (const markdown of [
+    `这是写调用示例：\`client.${op('li', 'ke')}(note)\`。`,
+    `- 写调用示例：\`${dynamicCall}\``,
+    `> 禁止调用 \`${dynamicInvoke}\`。`,
+    `普通 Markdown 文档提到 \`client.${op('li', 'ke')}(note)\`，但没有执行它。`,
+    ['```js', `client.${op('li', 'ke')}(note)`, '```'].join('\n'),
+    ['- 示例：', '  ```js', `  ${dynamicCall}`, '  ```'].join('\n'),
+    ['> 示例：', '> ```js', `> ${dynamicInvoke}`, '> ```'].join('\n'),
+  ]) assert.equal(findWriteCapabilityInvocation(markdown), null, markdown);
+
+  for (const executable of [
+    `这是文档示例：\`client.${op('li', 'ke')}(note)\`。\nclient.${op('li', 'ke')}(note)`,
+    `- 说明：不要写入\n${dynamicCall}`,
+    `> 文档仅介绍只读能力\n${dynamicInvoke}`,
+    `const example = \`client.${op('li', 'ke')}(note)\`; ${dynamicCall}`,
+  ]) assert.match(findWriteCapabilityInvocation(executable) ?? '', /写能力调用/, executable);
+});
+
 test('CLI audits staged index content rather than a differing worktree', async () => {
   const repo = await mkdtemp(path.join(os.tmpdir(), 'xhs-security-audit-'));
   await mkdir(path.join(repo, '04-工具'));
