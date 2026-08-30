@@ -83,7 +83,7 @@ Puppeteer 当前精确锁定为 23.11.1，以复现已验证的 Windows/Chrome 1
 
 - `npm ci` 下载 Chromium 失败：检查代理、证书和网络策略后重试；不要提交下载后的浏览器或整个 `node_modules/`。
 - Node 版本不在 `>=20 <25`：切换到 `.nvmrc` 指定的 Node 20，再重新执行 `npm ci`。
-- `npm run check:config` 失败：该命令只检查 Node 版本、`package-lock.json`、`.env.example`、`06-产出/00000000-verify-fixture/copy.md` 和 `XHS_MCP_URL` 的 HTTP(S) URL 格式，不检查私有账号档案或已发档案，也无需凭据；请按具体 `FAIL` 信息修复对应基础配置。
+- `npm run check:config` 失败：Node 版本不符合要求，缺少 `package-lock.json`、`.env.example` 或 `06-产出/00000000-verify-fixture/copy.md`，以及 `XHS_MCP_URL` 不是有效的 HTTP(S) URL，均会导致命令失败；其余可选能力仅做只读探测并输出信息，不检查私有账号档案或已发档案，也无需凭据。请按具体 `FAIL` 信息修复对应基础配置。
 - `npm run smoke` 失败：保留完整输出，先重新执行 `npm test` 区分依赖/脚本问题与 fixture 问题。
 - 可选研究后端不可用：不影响基础四条命令；真实工作流会记录 `degraded`，而不是越过只读边界或尝试自动发布。
 
