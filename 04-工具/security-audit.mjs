@@ -16,7 +16,7 @@ export function findForbiddenPath(input) {
   const lower = file.toLowerCase();
   const base = path.posix.basename(lower);
   if (/(^|\/)node_modules(\/|$)/i.test(file)) return 'node_modules';
-  if (/\.(?:pem|key|p12|pfx|crt|cer|der|csr|pkcs8|pkcs12|jks|keystore)$/i.test(file)) return '密钥 / 证书文件';
+  if (/\.(?:pem|key|ppk|pvk|p7b|p7c|p8|p12|pfx|crt|cer|der|csr|pkcs8|pkcs12|jks|keystore)$/i.test(file)) return '密钥 / 证书文件';
   const isPublicExample = allowedExamples.has(file)
     || /(?:^|\.)example(?:\.|$)/i.test(base)
     || /(^|\/)fixtures?(\/|$)/i.test(file)
@@ -62,115 +62,137 @@ export function findSecret(content) {
   return null;
 }
 
-function stripCommentsOutsideStrings(content) {
+function maskJavaScriptLiteralsAndComments(content) {
   let result = '';
-  let state = 'code';
-  let quote = '';
+  const stack = [{ type: 'code', interpolationDepth: 0 }];
+  let canStartRegex = true;
   for (let index = 0; index < content.length;) {
     const current = content[index];
     const next = content[index + 1];
-    if (state === 'string') {
-      result += current;
-      if (current === '\\') {
-        if (next !== undefined) result += next;
-        index += 2;
+    const state = stack.at(-1);
+    const blank = character => character === '\n' || character === '\r' ? character : ' ';
+
+    if (state.type === 'line-comment') {
+      result += blank(current);
+      index += 1;
+      if (current === '\n' || current === '\r') stack.pop();
+      continue;
+    }
+    if (state.type === 'block-comment' || state.type === 'html-comment') {
+      const closing = state.type === 'block-comment' ? '*/' : '-->';
+      if (content.startsWith(closing, index)) {
+        result += ' '.repeat(closing.length);
+        index += closing.length;
+        stack.pop();
       } else {
-        if (current === quote) state = 'code';
+        result += blank(current);
         index += 1;
       }
       continue;
     }
-    if (state === 'line-comment') {
-      if (current === '\n' || current === '\r') {
-        result += current;
-        state = 'code';
-      } else result += ' ';
-      index += 1;
+    if (state.type === 'string' || state.type === 'regex') {
+      result += blank(current);
+      if (current === '\\' && next !== undefined) {
+        result += blank(next);
+        index += 2;
+      } else {
+        if (state.type === 'regex') {
+          if (current === '[') state.inClass = true;
+          if (current === ']') state.inClass = false;
+        }
+        index += 1;
+        if ((state.type === 'string' && current === state.quote)
+          || (state.type === 'regex' && current === '/' && !state.inClass)) {
+          stack.pop();
+          canStartRegex = false;
+        }
+      }
       continue;
     }
-    if (state === 'block-comment') {
-      if (current === '*' && next === '/') {
+    if (state.type === 'template') {
+      if (current === '\\' && next !== undefined) {
+        result += `${blank(current)}${blank(next)}`;
+        index += 2;
+      } else if (current === '`') {
+        result += ' ';
+        index += 1;
+        stack.pop();
+        canStartRegex = false;
+      } else if (current === '$' && next === '{') {
         result += '  ';
         index += 2;
-        state = 'code';
+        stack.push({ type: 'code', interpolationDepth: 1 });
+        canStartRegex = true;
       } else {
-        result += current === '\n' || current === '\r' ? current : ' ';
+        result += blank(current);
         index += 1;
       }
       continue;
     }
-    if (state === 'html-comment') {
-      if (content.startsWith('-->', index)) {
-        result += '   ';
-        index += 3;
-        state = 'code';
-      } else {
-        result += current === '\n' || current === '\r' ? current : ' ';
-        index += 1;
-      }
-      continue;
-    }
-    if (current === '"' || current === "'" || current === '`') {
-      quote = current;
-      state = 'string';
+
+    if (state.interpolationDepth && current === '}') {
+      state.interpolationDepth -= 1;
+      result += ' ';
+      index += 1;
+      if (state.interpolationDepth === 0) stack.pop();
+      canStartRegex = false;
+    } else if (state.interpolationDepth && current === '{') {
+      state.interpolationDepth += 1;
       result += current;
       index += 1;
-    } else if (current === '/' && next === '/' && content[index - 1] !== ':') {
-      result += '  ';
-      index += 2;
-      state = 'line-comment';
-    } else if (current === '/' && next === '*') {
-      result += '  ';
-      index += 2;
-      state = 'block-comment';
+      canStartRegex = true;
     } else if (content.startsWith('<!--', index)) {
       result += '    ';
       index += 4;
-      state = 'html-comment';
+      stack.push({ type: 'html-comment' });
+    } else if (current === '/' && next === '/') {
+      result += '  ';
+      index += 2;
+      stack.push({ type: 'line-comment' });
+    } else if (current === '/' && next === '*') {
+      result += '  ';
+      index += 2;
+      stack.push({ type: 'block-comment' });
+    } else if (current === '"' || current === "'") {
+      result += ' ';
+      index += 1;
+      stack.push({ type: 'string', quote: current });
+    } else if (current === '`') {
+      result += ' ';
+      index += 1;
+      stack.push({ type: 'template' });
+    } else if (current === '/' && (canStartRegex || /\b(?:return|throw|case|delete|void|typeof|instanceof|in|of|yield|await)\s*$/.test(result))) {
+      result += ' ';
+      index += 1;
+      stack.push({ type: 'regex', inClass: false });
     } else {
       result += current;
       index += 1;
+      if (!/\s/.test(current)) canStartRegex = /[=(:,!&|?{};\[\]]/.test(current);
     }
   }
   return result;
 }
 
-function maskStringLiterals(content) {
-  let result = '';
-  let quote = '';
-  let preserve = false;
-  for (let index = 0; index < content.length; index += 1) {
-    const current = content[index];
-    if (!quote) {
-      if (current === '"' || current === "'" || current === '`') {
-        const previous = result.trimEnd().at(-1);
-        quote = current;
-        preserve = current === '`' && previous === '[';
-        result += preserve ? current : ' ';
-      } else result += current;
-      continue;
-    }
-    if (current === '\\') {
-      result += preserve ? current : ' ';
-      if (index + 1 < content.length) {
-        index += 1;
-        result += preserve ? content[index] : ' ';
-      }
-    } else if (current === quote) {
-      result += preserve ? current : ' ';
-      quote = '';
-      preserve = false;
-    } else result += preserve || current === '\n' || current === '\r' ? current : ' ';
-  }
-  return result;
+function isDocumentationParagraph(paragraph, operationPattern) {
+  const plain = paragraph.replace(/<[^>]+>/g, ' ').trim();
+  const mentions = plain.match(new RegExp(`(?:\\b${operationPattern}\\s*\\(|\\.\\s*${operationPattern}\\s*\\()`, 'gi')) ?? [];
+  if (mentions.length !== 1) return false;
+  if (/<\s*(?:script|style)\b|\bon\w+\s*=/i.test(paragraph)) return false;
+  if (/\$\{|=>|[;；{}]|\/\*|\*\/|\b(?:const|let|var|await|return|throw|function|class|import|export)\b/.test(plain)) return false;
+  return /(?:示例|文档|说明|提到|禁止|不得|不会执行|不调用|只读|is\s+(?:strictly\s+)?prohibited|must\s+never\s+be\s+executed|documentation)/i.test(plain)
+    || /^<[^>]+>[\s\S]*<\/[^>]+>$/.test(paragraph.trim());
 }
 
 export function findWriteCapabilityInvocation(content) {
   const operation = '(?:publish_content|publishContent|post|comment|reply|like|collect|uncollect|favorite|unfavorite|follow|unfollow)';
-  const withoutBlockComments = stripCommentsOutsideStrings(content);
+  if (new RegExp(`<[^>]+\\bon\\w+\\s*=\\s*(["'])[^"']*(?:\\.|\\b)${operation}\\s*\\(`, 'i').test(content)) return '写能力调用';
+  const withoutDocumentationParagraphs = content.split(/(\r?\n\s*\r?\n)/).map(part => (
+    isDocumentationParagraph(part, operation) ? part.replace(/[^\r\n]/g, ' ') : part
+  )).join('');
   let inMarkdownFence = false;
   let markdownFence = '';
-  const executableLines = withoutBlockComments.split(/\r?\n/).map(rawLine => {
+  const executableLines = withoutDocumentationParagraphs.split(/\r?\n/).map(rawLine => {
     if (/^\s*\[!\[.*\]\([^)]*\)\s*$/.test(rawLine)) return '';
     const fence = rawLine.match(/^\s*(?:>\s*)?(?:(?:[-*+]\s+|\d+\.\s+))?(`{3,}|~{3,})/);
     if (fence) {
@@ -186,20 +208,20 @@ export function findWriteCapabilityInvocation(content) {
     }
     if (inMarkdownFence) return '';
     let line = rawLine.trim();
-    line = line.replace(/(?<!\[)(`+)[^`]*\1/g, ' ');
+    if (!line.includes('${')) line = line.replace(/(?<!\[)(`+)[^`]*\1/g, ' ');
     if (!line || /^#/.test(line)) return '';
     line = line.replace(/^(?:>\s*)?(?:(?:[-*+]\s+|\d+\.\s+))?/, '').trim();
     if (!line) return '';
-    if (/^<[^>]+>.*<\/[^>]+>\s*$/.test(line)) return '';
+    if (/^<[^>]+>.*<\/[^>]+>\s*$/.test(line) && !/^<\s*(?:script|style)\b/i.test(line)) return '';
     if (/^[^;；{}]*[：:]\s*(?:client|sdk|mcp|redbook|tool)(?:\?\.)?[.[].*\)?[。！？]?$/i.test(line)) return '';
-    if (/^(?:const|let|var)\s+\w+\s*=\s*(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`)\s*;?$/.test(line)
+    if (!line.includes('${') && /^(?:const|let|var)\s+\w+\s*=\s*(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`)\s*;?$/.test(line)
       && !new RegExp(`^(?:const|let|var)\\s+\\w+\\s*=\\s*["']${operation}["'](?:\\s*;)?$`, 'i').test(line)) return '';
     if (/^(?:不调用|不得调用|禁止|废弃|只读|只允许出现在|不会自动|不包含)[^;；]*`[^`]+`[^;；]*[。！？]?$/.test(line)) return '';
     if (/^(?:不调用|不得调用|禁止|废弃|只读|只允许出现在|不会自动|不包含)[^;；]*$/.test(line)) return '';
     return line;
   }).filter(Boolean);
   const executableContent = executableLines.join('\n');
-  const codeOnlyContent = maskStringLiterals(executableContent);
+  const codeOnlyContent = maskJavaScriptLiteralsAndComments(executableContent);
   const dispatch = /\b(?:callTool|invoke)\s*(?:\?\.)?\s*\(/gi;
   for (const match of codeOnlyContent.matchAll(dispatch)) {
     const tail = executableContent.slice(match.index + match[0].length);
@@ -219,16 +241,19 @@ export function findWriteCapabilityInvocation(content) {
   }
   if (/\b[A-Za-z_$][\w$]*\s*\[\s*[^\]\r\n]+\]\s*(?:\?\.)?\s*\(/i.test(codeOnlyContent)
     && !/\bclass\s+[\w$]+[^{}]*\{[^{}]*\[[^\]]+\]\s*\(/i.test(codeOnlyContent)) return '写能力调用';
-  if (new RegExp(`\\b(?:const|let|var)\\s+(\\w+)\\s*=\\s*[^;\\n]*\\.${operation}\\s*(?:;|\\r?\\n)[\\s\\S]{0,500}?\\b\\1\\s*\\(`, 'i').test(codeOnlyContent)) return '写能力调用';
-  if (/\b(?:const|let|var)\s+(\w+)\s*=\s*[^;\n]*\.\s*callTool\s*(?:;|\r?\n)[\s\S]{0,500}?\b\1\s*\(/i.test(codeOnlyContent)) return '写能力调用';
-  if (new RegExp(`\\b(?:const|let|var)\\s*\\{[^}]*\\b(publish_content|publishContent|comment|reply|like|collect|uncollect|favorite|unfavorite|follow|unfollow)\\b[^}]*\\}\\s*=[^;\\n]*(?:;|\\r?\\n)[\\s\\S]{0,500}?\\b\\1\\s*\\(`, 'i').test(codeOnlyContent)) return '写能力调用';
-  if (new RegExp(`\\b(?:const|let|var)\\s*\\{[^}]*\\b${operation}\\s*:\\s*(\\w+)[^}]*\\}\\s*=[^;\\n]*(?:;|\\r?\\n)[\\s\\S]{0,500}?\\b\\1\\s*\\(`, 'i').test(codeOnlyContent)) return '写能力调用';
-  for (const rawLine of executableLines) {
-    const line = rawLine.trim();
-    const codeLine = maskStringLiterals(line);
+  if (new RegExp(`\\b(?:const|let|var)\\s+(\\w+)\\s*=\\s*[^;\\n]*\\.${operation}\\s*(?:;|\\r?\\n)[\\s\\S]*?\\b\\1\\s*\\(`, 'i').test(codeOnlyContent)) return '写能力调用';
+  if (/\b(?:const|let|var)\s+(\w+)\s*=\s*[^;\n]*\.\s*callTool\s*(?:;|\r?\n)[\s\S]*?\b\1\s*\(/i.test(codeOnlyContent)) return '写能力调用';
+  if (new RegExp(`\\b(?:const|let|var)\\s*\\{[^}]*\\b(publish_content|publishContent|comment|reply|like|collect|uncollect|favorite|unfavorite|follow|unfollow)\\b[^}]*\\}\\s*=[^;\\n]*(?:;|\\r?\\n)[\\s\\S]*?\\b\\1\\s*\\(`, 'i').test(codeOnlyContent)) return '写能力调用';
+  if (new RegExp(`\\b(?:const|let|var)\\s*\\{[^}]*\\b${operation}\\s*:\\s*(\\w+)[^}]*\\}\\s*=[^;\\n]*(?:;|\\r?\\n)[\\s\\S]*?\\b\\1\\s*\\(`, 'i').test(codeOnlyContent)) return '写能力调用';
+  const codeLines = codeOnlyContent.split(/\r?\n/);
+  const sourceLines = executableContent.split(/\r?\n/);
+  for (let index = 0; index < codeLines.length; index += 1) {
+    const codeLine = codeLines[index].trim();
+    const line = sourceLines[index].trim();
     const declaration = new RegExp(`(?:\\bfunction\\s+|\\b(?:class|interface)\\s+[\\w$]+[^{}]*\\{[^{}]*|\\btype\\s+[\\w$]+\\s*=\\s*\\{[^{}]*|\\b(?:public|private|protected|static|abstract|async)\\s+)${operation}\\s*\\([^)]*\\)\\s*(?:\\{|:\\s*[^;{}]+;?)`, 'i');
     const methodSignature = new RegExp(`^(?:(?:public|private|protected|static|abstract|async)\\s+)*${operation}\\s*\\([^)]*\\)\\s*(?:\\{|:\\s*[^;{}]+;?)`, 'i');
     if (new RegExp(`\\b${operation}\\s*(?:\\?\\.)?\\s*\\(`, 'i').test(codeLine) && !declaration.test(line) && !methodSignature.test(line)) return '写能力调用';
+    if (new RegExp(`\\.\\s*${operation}\\s*\\)\\s*\\(`, 'i').test(codeLine)) return '写能力调用';
     if (new RegExp(`\\[\\s*["']${operation}["']\\s*\\]\\s*(?:\\?\\.)?\\s*\\(`, 'i').test(line)) return '写能力调用';
     if (new RegExp(`^(?:\\$\\s*)?(?:npx\\s+)?redbook\\s+(?:post|publish|publish_content|comment|reply|batch-reply|like|unlike|collect|uncollect|favorite|unfavorite|follow|unfollow)\\b`, 'i').test(line)) return '写能力调用';
   }

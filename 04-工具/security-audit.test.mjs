@@ -92,6 +92,10 @@ test('sensitive key and certificate extensions override example, fixture and lic
     'fixtures/demo.pem',
     'fixtures/LICENSE.p12',
     'examples/certificate.example.pfx',
+    'fixtures/client.example.ppk',
+    'examples/LICENSE.pvk',
+    'fixtures/chain.p7b',
+    'examples/chain.example.p7c',
   ]) assert.match(findForbiddenPath(file) ?? '', /密钥|证书/i, file);
 
   assert.equal(findForbiddenPath('LICENSE'), null);
@@ -158,6 +162,49 @@ test('JavaScript string comment delimiters cannot hide adjacent write calls', ()
     call("const marker = '//'; client.fol", 'low(user)'),
     call("const marker = '/*'; client[operation](note); const end = '*/';"),
   ]) assert.match(findWriteCapabilityInvocation(content) ?? '', /写能力调用/, content);
+});
+
+test('scans template interpolations and regex literals as JavaScript code', () => {
+  const op = (...parts) => parts.join('');
+  const publish = op('publish_', 'content');
+  const like = op('li', 'ke');
+  for (const content of [
+    `const message = \`result: \${client.${publish}({ title })}\`;`,
+    `const nested = \`outer \${\`inner \${client.${like}(note)}\`}\`;`,
+    `const matcher = /[//]/; client.${publish}(payload);`,
+    `const matcher = /https?:\\/\\//; client.${like}(note);`,
+    `function matches(value) { return /[//]/.test(value); } client.${like}(note);`,
+  ]) assert.match(findWriteCapabilityInvocation(content) ?? '', /写能力调用/, content);
+
+  assert.equal(findWriteCapabilityInvocation(`const sample = \`client.${like}(note)\`;`), null);
+});
+
+test('detects sequence-expression and distant multiline aliases without a fixed window', () => {
+  const op = (...parts) => parts.join('');
+  const padding = Array.from({ length: 80 }, (_, index) => `const safe${index} = ${index};`).join('\n');
+  for (const content of [
+    `(0, client.${op('publish_', 'content')})(payload)`,
+    `const writer = client.${op('li', 'ke')};\n${padding}\nawait writer(note)`,
+    `const { ${op('fol', 'low')}: doFollow } = client;\n${padding}\nawait doFollow(user)`,
+  ]) assert.match(findWriteCapabilityInvocation(content) ?? '', /写能力调用/, content);
+});
+
+test('keeps multiline Markdown and HTML policy prose inert but not embedded executable code', () => {
+  const op = (...parts) => parts.join('');
+  const call = `client.${op('publish_', 'content')}(payload)`;
+  for (const document of [
+    `The call ${call}\nis prohibited and must never be executed.`,
+    `<p>The call ${call}\nis prohibited and shown only for documentation.</p>`,
+    `普通文档说明 ${call}\n是禁止行为，不会执行。`,
+  ]) assert.equal(findWriteCapabilityInvocation(document), null, document);
+
+  for (const executable of [
+    `The call is prohibited.\nconst run = () => ${call};`,
+    `<p>${call} is prohibited.</p>\n${call};`,
+    `<script>${call};</script>`,
+    `<button onclick="${call}">Do not run</button>`,
+    `禁止调用说明：${call}\n\`result: \${${call}}\``,
+  ]) assert.match(findWriteCapabilityInvocation(executable) ?? '', /写能力调用/, executable);
 });
 
 test('does not mistake method declarations for write invocations', () => {
