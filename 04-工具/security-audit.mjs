@@ -61,11 +61,112 @@ export function findSecret(content) {
   return null;
 }
 
+function stripCommentsOutsideStrings(content) {
+  let result = '';
+  let state = 'code';
+  let quote = '';
+  for (let index = 0; index < content.length;) {
+    const current = content[index];
+    const next = content[index + 1];
+    if (state === 'string') {
+      result += current;
+      if (current === '\\') {
+        if (next !== undefined) result += next;
+        index += 2;
+      } else {
+        if (current === quote) state = 'code';
+        index += 1;
+      }
+      continue;
+    }
+    if (state === 'line-comment') {
+      if (current === '\n' || current === '\r') {
+        result += current;
+        state = 'code';
+      } else result += ' ';
+      index += 1;
+      continue;
+    }
+    if (state === 'block-comment') {
+      if (current === '*' && next === '/') {
+        result += '  ';
+        index += 2;
+        state = 'code';
+      } else {
+        result += current === '\n' || current === '\r' ? current : ' ';
+        index += 1;
+      }
+      continue;
+    }
+    if (state === 'html-comment') {
+      if (content.startsWith('-->', index)) {
+        result += '   ';
+        index += 3;
+        state = 'code';
+      } else {
+        result += current === '\n' || current === '\r' ? current : ' ';
+        index += 1;
+      }
+      continue;
+    }
+    if (current === '"' || current === "'" || current === '`') {
+      quote = current;
+      state = 'string';
+      result += current;
+      index += 1;
+    } else if (current === '/' && next === '/') {
+      result += '  ';
+      index += 2;
+      state = 'line-comment';
+    } else if (current === '/' && next === '*') {
+      result += '  ';
+      index += 2;
+      state = 'block-comment';
+    } else if (content.startsWith('<!--', index)) {
+      result += '    ';
+      index += 4;
+      state = 'html-comment';
+    } else {
+      result += current;
+      index += 1;
+    }
+  }
+  return result;
+}
+
+function maskStringLiterals(content) {
+  let result = '';
+  let quote = '';
+  let preserve = false;
+  for (let index = 0; index < content.length; index += 1) {
+    const current = content[index];
+    if (!quote) {
+      if (current === '"' || current === "'" || current === '`') {
+        const previous = result.trimEnd().at(-1);
+        quote = current;
+        preserve = current === '`' && previous === '[';
+        result += preserve ? current : ' ';
+      } else result += current;
+      continue;
+    }
+    if (current === '\\') {
+      result += preserve ? current : ' ';
+      if (index + 1 < content.length) {
+        index += 1;
+        result += preserve ? content[index] : ' ';
+      }
+    } else if (current === quote) {
+      result += preserve ? current : ' ';
+      quote = '';
+      preserve = false;
+    } else result += preserve || current === '\n' || current === '\r' ? current : ' ';
+  }
+  return result;
+}
+
 export function findWriteCapabilityInvocation(content) {
   const operation = '(?:publish_content|publishContent|post|comment|reply|like|collect|uncollect|favorite|unfavorite|follow|unfollow)';
-  const withoutBlockComments = content
-    .replace(/<!--[\s\S]*?-->/g, ' ')
-    .replace(/\/\*[\s\S]*?\*\//g, ' ');
+  const withoutBlockComments = stripCommentsOutsideStrings(content);
   let inMarkdownFence = false;
   let markdownFence = '';
   const executableLines = withoutBlockComments.split(/\r?\n/).map(rawLine => {
@@ -82,30 +183,33 @@ export function findWriteCapabilityInvocation(content) {
       return '';
     }
     if (inMarkdownFence) return '';
-    let line = rawLine.replace(/(^|\s)\/\/.*$/, '$1').trim();
-    line = line.replace(/(`+)[^`]*\1/g, ' ');
+    let line = rawLine.trim();
+    line = line.replace(/(?<!\[)(`+)[^`]*\1/g, ' ');
     if (!line || /^#/.test(line)) return '';
     line = line.replace(/^(?:>\s*)?(?:(?:[-*+]\s+|\d+\.\s+))?/, '').trim();
     if (!line) return '';
-    if (/^(?:const|let|var)\s+\w+\s*=\s*(["'`]).*\1\s*;?$/.test(line)
+    if (/^(?:const|let|var)\s+\w+\s*=\s*(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`)\s*;?$/.test(line)
       && !new RegExp(`^(?:const|let|var)\\s+\\w+\\s*=\\s*["']${operation}["'](?:\\s*;)?$`, 'i').test(line)) return '';
     if (/^(?:不调用|不得调用|禁止|废弃|只读|只允许出现在|不会自动|不包含)[^;；]*`[^`]+`[^;；]*[。！？]?$/.test(line)) return '';
     if (/^(?:不调用|不得调用|禁止|废弃|只读|只允许出现在|不会自动|不包含)[^;；]*$/.test(line)) return '';
     return line;
   }).filter(Boolean);
   const executableContent = executableLines.join('\n');
+  const codeOnlyContent = maskStringLiterals(executableContent);
   if (new RegExp(`\\bcallTool\\s*\\(\\s*\\{[^}]{0,300}?\\bname\\s*:\\s*["']${operation}["']`, 'i').test(executableContent)) return '写能力调用';
   if (new RegExp(`\\bcallTool\\s*\\(\\s*["']${operation}["']`, 'i').test(executableContent)) return '写能力调用';
   if (new RegExp(`\\binvoke\\s*\\(\\s*["']${operation}["']`, 'i').test(executableContent)) return '写能力调用';
   if (/\b(?:callTool|invoke)\s*\(\s*(?!["'`{])(?:[A-Za-z_$][\w$]*)(?:\s*(?:\.[A-Za-z_$][\w$]*|\[[^\]]+\]|\([^)]*\)))*/i.test(executableContent)) return '写能力调用';
-  if (/\b(?:client|sdk|redbook|mcp)\s*\[\s*[A-Za-z_$][\w$]*\s*\]\s*\(/i.test(executableContent)) return '写能力调用';
+  if (/\b(?:client|sdk|redbook|mcp)\s*\[\s*[^\]\r\n]+\]\s*\(/i.test(codeOnlyContent)) return '写能力调用';
   if (new RegExp(`\\b(?:const|let|var)\\s+(\\w+)\\s*=\\s*[^;\\n]*(?:\\.|\\[\\s*["'])${operation}(?:["']\\s*\\])?\\s*(?:;|\\r?\\n)[\\s\\S]{0,500}?\\b\\1\\s*\\(`, 'i').test(executableContent)) return '写能力调用';
   if (new RegExp(`\\b(?:const|let|var)\\s*\\{[^}]*\\b(publish_content|publishContent|comment|reply|like|collect|uncollect|favorite|unfavorite|follow|unfollow)\\b[^}]*\\}\\s*=[^;\\n]*(?:;|\\r?\\n)[\\s\\S]{0,500}?\\b\\1\\s*\\(`, 'i').test(executableContent)) return '写能力调用';
   if (new RegExp(`\\b(?:const|let|var)\\s*\\{[^}]*\\b${operation}\\s*:\\s*(\\w+)[^}]*\\}\\s*=[^;\\n]*(?:;|\\r?\\n)[\\s\\S]{0,500}?\\b\\1\\s*\\(`, 'i').test(executableContent)) return '写能力调用';
   if (new RegExp(`\\b(?:const|let|var)\\s+(\\w+)\\s*=\\s*["']${operation}["']\\s*(?:;|\\r?\\n)[\\s\\S]{0,500}?\\b(?:callTool|invoke)\\s*\\(\\s*\\1\\b`, 'i').test(executableContent)) return '写能力调用';
   for (const rawLine of executableLines) {
     const line = rawLine.trim();
-    if (new RegExp(`\\b${operation}\\s*\\(`, 'i').test(line) && !new RegExp(`\\bfunction\\s+${operation}\\s*\\(`, 'i').test(line)) return '写能力调用';
+    const declaration = new RegExp(`(?:\\bfunction\\s+|\\b(?:class|interface)\\s+[\\w$]+[^{}]*\\{[^{}]*|\\btype\\s+[\\w$]+\\s*=\\s*\\{[^{}]*|\\b(?:public|private|protected|static|abstract|async)\\s+)${operation}\\s*\\([^)]*\\)\\s*(?:\\{|:\\s*[^;{}]+;?)`, 'i');
+    const methodSignature = new RegExp(`^(?:(?:public|private|protected|static|abstract|async)\\s+)*${operation}\\s*\\([^)]*\\)\\s*(?:\\{|:\\s*[^;{}]+;?)`, 'i');
+    if (new RegExp(`\\b${operation}\\s*\\(`, 'i').test(line) && !declaration.test(line) && !methodSignature.test(line)) return '写能力调用';
     if (new RegExp(`\\[\\s*["']${operation}["']\\s*\\]\\s*\\(`, 'i').test(line)) return '写能力调用';
     if (new RegExp(`^(?:\\$\\s*)?(?:npx\\s+)?redbook\\s+(?:post|publish|publish_content|comment|reply|batch-reply|like|unlike|collect|uncollect|favorite|unfavorite|follow|unfollow)\\b`, 'i').test(line)) return '写能力调用';
   }

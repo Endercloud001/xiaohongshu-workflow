@@ -151,6 +151,38 @@ test('prohibition wording cannot hide executable write calls', () => {
   ]) assert.equal(findWriteCapabilityInvocation(content), null, content);
 });
 
+test('JavaScript string comment delimiters cannot hide adjacent write calls', () => {
+  const call = (...parts) => parts.join('');
+  for (const content of [
+    call('const marker = "/*"; client.li', 'ke(note); const end = "*/";'),
+    call("const marker = '//'; client.fol", 'low(user)'),
+    call("const marker = '/*'; client[operation](note); const end = '*/';"),
+  ]) assert.match(findWriteCapabilityInvocation(content) ?? '', /写能力调用/, content);
+});
+
+test('does not mistake method declarations for write invocations', () => {
+  const inert = (...parts) => parts.join('');
+  for (const content of [
+    inert('class Client { li', 'ke(note) { return note; } }'),
+    inert('class Client { async fol', 'low(user) { return user; } }'),
+    inert('class Client {\n  li', 'ke(note) { return note; }\n}'),
+    inert('interface Client { li', 'ke(note: Note): Promise<void>; }'),
+    inert('interface Client {\n  fol', 'low(user: User): void;\n}'),
+    inert('type Client = { fol', 'low(user: User): void }'),
+  ]) assert.equal(findWriteCapabilityInvocation(content), null, content);
+});
+
+test('flags dynamic member calls conservatively but permits dynamic member declarations', () => {
+  const code = (...parts) => parts.join('');
+  for (const content of [
+    code('client[opera', 'tion](note)'),
+    code('sdk[getOpera', 'tion()](payload)'),
+    code('redbook[`li${ki', 'nd}`](note)'),
+  ]) assert.match(findWriteCapabilityInvocation(content) ?? '', /写能力调用/, content);
+
+  assert.equal(findWriteCapabilityInvocation(code('class Client { [opera', 'tion](note) {} }')), null);
+});
+
 test('detects MCP and SDK write dispatch while permitting read calls and inert examples', () => {
   const op = (...parts) => parts.join('');
   for (const call of [
