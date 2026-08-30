@@ -18,8 +18,10 @@ const mcpUrl = process.env.XHS_MCP_URL ?? 'http://localhost:18060/mcp';
 try {
   const parsed = new URL(mcpUrl);
   if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('协议必须是 http/https');
+  if (parsed.username || parsed.password) throw new Error('URL 不得内嵌凭据');
+  if (!['localhost', '127.0.0.1', '::1'].includes(parsed.hostname)) throw new Error('仅允许本机研究服务');
 } catch {
-  errors.push(`XHS_MCP_URL 不是有效的 HTTP(S) URL: ${mcpUrl}`);
+  errors.push('XHS_MCP_URL 必须是无内嵌凭据的本机 HTTP(S) URL');
 }
 
 const optionalSkills = [

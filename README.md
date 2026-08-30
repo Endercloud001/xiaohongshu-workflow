@@ -69,15 +69,16 @@ npm ci
 npm test
 npm run check:config
 npm run smoke
+npm run audit:security
 ```
 
-这四条命令只验证仓库的确定性基础能力，不会访问小红书、不需要登录，也不会创建或发布真实笔记。预期行为是四条命令均以退出码 0 结束；若其中一条失败，先按下方“常见失败”排查，不要用本地 `node_modules`、Cookie 或可执行文件绕过安装契约。
+这些命令只验证仓库的确定性基础能力和公开树安全边界，不会访问小红书、不需要登录，也不会创建或发布真实笔记。预期行为是全部命令均以退出码 0 结束；若其中一条失败，先按下方“常见失败”排查，不要用本地 `node_modules`、Cookie 或可执行文件绕过安装契约。安全报告与泄露处理见 [`SECURITY.md`](SECURITY.md)。
 
 `npm ci` 严格按 `package-lock.json` 安装并下载 Puppeteer 所需浏览器。若受代理或网络策略影响，先修复下载问题，不要改用仓库中的本地 `node_modules` 或提交浏览器可执行文件。
 
 Puppeteer 当前精确锁定为 23.11.1，以复现已验证的 Windows/Chrome 131 组合；npm 会提示该版本已停止上游支持。升级须同时验证新版自带 Chrome 在目标 Windows 环境可启动，不能只改依赖范围。
 
-基础四条命令不需要 Cookie、Token、MCP 服务或小红书登录态。`.env.example` 只列出可选研究后端的非敏感默认值；如需覆盖，请复制为被 Git 忽略的 `.env`，并在调用命令前由 shell 或运行器加载。
+基础检查命令不需要 Cookie、Token、MCP 服务或小红书登录态。`.env.example` 只列出可选研究后端的非敏感默认值；如需覆盖，请复制为被 Git 忽略的 `.env`，并在调用命令前由 shell 或运行器加载。
 
 ### 常见失败
 

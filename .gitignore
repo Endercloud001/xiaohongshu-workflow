@@ -5,8 +5,17 @@ cookies.*.json
 web_session*
 auth-state*.json
 storage-state*.json
+storage_state*.json
 *credential*.json
 *credentials*.json
+*token*.json
+.auth/
+.sessions/
+.cache/puppeteer/
+browser-profile/
+browser_profile/
+user-data-dir/
+user_data_dir/
 .env
 .env.*
 !.env.example
@@ -19,9 +28,17 @@ storage-state*.json
 
 # 本地运行时与下载物
 *.exe
+*.dll
+*.msi
+*.dmg
+*.AppImage
 *.zip
 *.log
 node_modules/
+.pnpm-store/
+.npm/
+.yarn/
+.playwright/
 .redbook/
 .claude/settings.local.json
 .claude/skills/cover-anchor-system/
