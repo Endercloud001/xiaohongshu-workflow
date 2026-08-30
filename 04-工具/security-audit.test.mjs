@@ -9,7 +9,7 @@ import {
 } from './security-audit.mjs';
 
 test('audits common text source extensions but skips binary assets', () => {
-  for (const file of ['src/app.js', 'src/app.ts', 'src/view.tsx', 'scripts/tool.ps1', 'config/settings.toml', 'tool.sh']) {
+  for (const file of ['src/app.js', 'src/app.ts', 'src/view.tsx', 'scripts/tool.ps1', 'config/settings.toml', 'tool.sh', '.npmrc']) {
     assert.equal(shouldAuditTextFile(file), true, file);
   }
   assert.equal(shouldAuditTextFile('images/cover.png'), false);
@@ -22,6 +22,11 @@ test('rejects local authentication and runtime paths', () => {
   assert.match(findForbiddenPath('profile/Default/Preferences') ?? '', /profile/i);
   assert.match(findForbiddenPath('token.txt') ?? '', /凭据|密钥/i);
   assert.match(findForbiddenPath('auth/identity.json') ?? '', /Cookie|会话|凭据/i);
+  for (const file of ['xhs-cookie.json', 'xhs-cookies.json', 'session-store.json']) {
+    assert.match(findForbiddenPath(file) ?? '', /Cookie|会话/i, file);
+  }
+  assert.match(findForbiddenPath('chrome-profile/Default/Cookies') ?? '', /profile/i);
+  assert.match(findForbiddenPath('token.yaml') ?? '', /凭据|密钥/i);
   assert.match(findForbiddenPath('bin/tool.cmd') ?? '', /可执行文件/i);
   assert.match(findForbiddenPath('01-账号/账号档案.md') ?? '', /真实账号档案/);
   assert.equal(findForbiddenPath('01-账号/账号档案.example.md'), null);
@@ -29,6 +34,9 @@ test('rejects local authentication and runtime paths', () => {
   assert.equal(findForbiddenPath('examples/token.txt.example'), null);
   assert.equal(findForbiddenPath('LICENSE.key'), null);
   assert.equal(findForbiddenPath('src/profile.js'), null);
+  assert.equal(findForbiddenPath('src/token.js'), null);
+  assert.equal(findForbiddenPath('examples/xhs-cookie.json.example'), null);
+  assert.equal(findForbiddenPath('fixtures/chrome-profile/Preferences'), null);
   assert.equal(findForbiddenPath('node_modules/pkg/LICENSE'), 'node_modules');
   assert.equal(findForbiddenPath('fixtures/node_modules/pkg/index.js'), 'node_modules');
 });
@@ -49,6 +57,10 @@ test('detects credential-like content without flagging placeholders', () => {
   assert.match(findSecret(['api_', 'key="real-secret-value"; docs="https://example.invalid"'].join('')) ?? '', /疑似凭据/);
   assert.match(findSecret(['to', 'ken=process.env.TOKEN; pass', 'word="real-secret-value"'].join('')) ?? '', /疑似凭据/);
   assert.match(findSecret(['api_', 'key=your_api_key_here; to', 'ken="real-secret-value"'].join('')) ?? '', /疑似凭据/);
+  assert.match(findSecret(['_auth', 'Token=', 'npm_', 'runtime-secret-value'].join('')) ?? '', /疑似凭据/);
+  assert.match(findSecret(['Author', 'ization: Bearer ', 'runtime-secret-value'].join('')) ?? '', /疑似凭据/);
+  assert.equal(findSecret(['_auth', 'Token=${NPM_TOKEN}'].join('')), null);
+  assert.equal(findSecret(['Author', 'ization: Bearer <token>'].join('')), null);
 });
 
 test('detects executable publish and interaction calls but permits prohibition docs', () => {
@@ -72,4 +84,25 @@ test('detects executable publish and interaction calls but permits prohibition d
   ]) assert.match(findWriteCapabilityInvocation(call) ?? '', /写能力调用/);
   assert.equal(findWriteCapabilityInvocation('不调用 `publish_content`。'), null);
   assert.equal(findWriteCapabilityInvocation(['禁止 client.li', 'ke(note)'].join('')), null);
+});
+
+test('detects MCP and SDK write dispatch while permitting read calls and inert examples', () => {
+  const op = (...parts) => parts.join('');
+  for (const call of [
+    `client.callTool({name:'${op('publish_', 'content')}', arguments: payload})`,
+    `client.callTool('${op('publish_', 'content')}', payload)`,
+    `mcp.invoke('${op('li', 'ke')}', note)`,
+    `redbook.${op('po', 'st')}(payload)`,
+    `sdk.callTool({ name: "${op('com', 'ment')}" })`,
+    `mcp.invoke("${op('fol', 'low')}", user)`,
+  ]) assert.match(findWriteCapabilityInvocation(call) ?? '', /写能力调用/, call);
+
+  for (const safeCall of [
+    "client.callTool({name:'search_notes', arguments: query})",
+    "client.callTool('get_note', noteId)",
+    "mcp.invoke('list_tools')",
+    'redbook.search(query)',
+    `const sample = "client.callTool({name:'${op('publish_', 'content')}'})"`,
+    `不调用 client.callTool({name:'${op('publish_', 'content')}'})。`,
+  ]) assert.equal(findWriteCapabilityInvocation(safeCall), null, safeCall);
 });

@@ -22,11 +22,12 @@ export function findForbiddenPath(input) {
     || /^(?:licen[cs]e|copying|notice)(?:\.|$)/i.test(base);
   if (isPublicExample) return null;
   if (/\.(?:exe|com|cmd|bat|dll|msi|dmg|appimage)$/i.test(file)) return '可执行文件';
+  if (/(^|\/)(?:browser[-_.]?profile|chrome[-_.]?profile|profiles?|user[-_.]?data|\.redbook)(\/|$)/i.test(file)) return 'browser profile';
+  if (/^(?:xhs[-_.]?cookies?|session[-_.]?store)\.json$/i.test(base)) return 'Cookie / 会话文件';
   if (/(^|\/)(?:cookies?|sessions?|storage[-_.]?state|auth[-_.]?state|web[-_.]?session)(?:[./_-]|$)/i.test(file)) return 'Cookie / 会话文件';
-  if (/(^|\/)(?:browser[-_.]?profile|profiles?|user[-_.]?data|\.redbook)(\/|$)/i.test(file)) return 'browser profile';
   if (/(^|\/)(?:auth|authentication|credentials?)(\/|$)/i.test(file)) return '凭据 / 认证文件';
   if (/(^|\/)(?:access[-_.]?token|refresh[-_.]?token|api[-_.]?key|secret|password|credentials?)(?:\.[^/]+)?$/i.test(file)) return '凭据 / 密钥文件';
-  if (/(^|\/)token\.txt$/i.test(file)) return '凭据 / 密钥文件';
+  if (/(^|\/)token\.(?:txt|ya?ml)$/i.test(file)) return '凭据 / 密钥文件';
   if (/^01-账号\//.test(file) && !/\.example\./i.test(file)) return '真实账号档案';
   if (/^05-验收\/已发档案/i.test(file) && !/\.example\./i.test(file)) return '真实发布记录';
   if (/^06-产出\//.test(file) && !/^06-产出\/00000000-(selftest|verify-fixture)\//.test(file)) return '真实运行产物';
@@ -38,13 +39,16 @@ export function findForbiddenPath(input) {
 export function findSecret(content) {
   const safe = /(?:example\.invalid|your[_-]?(?:api[_-]?key|token)|replace[_-]?me|<[^>]+>)/i;
   for (const line of content.split(/\r?\n/)) {
-    const assignments = line.matchAll(/\b(?:api[_-]?key|access[_-]?token|refresh[_-]?token|token|client[_-]?secret|secret|password)\s*[:=]\s*(["']?)([^\s,"';}]+)/gi);
+    const assignments = line.matchAll(/(?<![\w])(?:_authToken|api[_-]?key|access[_-]?token|refresh[_-]?token|token|client[_-]?secret|secret|password)\s*[:=]\s*(["']?)(\$\{[A-Z][A-Z0-9_]*\}|[^\s,"';}]+)/gi);
     for (const assignment of assignments) {
       const value = assignment[2];
       const valueAndRest = line.slice(assignment.index + assignment[0].length - value.length);
       const isCodeReference = !assignment[1] && (/^[A-Za-z_$][\w$]*\s*\(/.test(valueAndRest) || /^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+$/.test(value));
-      if (!safe.test(value) && !isCodeReference && value.length >= 4) return '疑似凭据赋值';
+      const isEnvironmentReference = /^\$\{[A-Z][A-Z0-9_]*\}$/.test(value);
+      if (!safe.test(value) && !isCodeReference && !isEnvironmentReference && value.length >= 4) return '疑似凭据赋值';
     }
+    const bearer = line.match(/\bAuthorization\s*:\s*Bearer\s+([^\s,"';}]+)/i);
+    if (bearer && !safe.test(bearer[1]) && !/^\$\{[A-Z][A-Z0-9_]*\}$/.test(bearer[1])) return '疑似凭据 Bearer token';
     if (/\b(?:sk|ghp|github_pat|xox[baprs])[-_][A-Za-z0-9_-]{16,}\b/.test(line)) return '疑似凭据 token';
     if (/-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/.test(line)) return '私钥内容';
   }
@@ -52,14 +56,18 @@ export function findSecret(content) {
 }
 
 export function findWriteCapabilityInvocation(content) {
-  const operation = '(?:publish_content|publishContent|comment|reply|like|collect|uncollect|favorite|unfavorite|follow|unfollow)';
+  const operation = '(?:publish_content|publishContent|post|comment|reply|like|collect|uncollect|favorite|unfavorite|follow|unfollow)';
   const executableLines = content.split(/\r?\n/).map(rawLine => {
     const line = rawLine.trim();
+    if (/^(?:const|let|var)\s+\w+\s*=\s*(["'`]).*\1\s*;?$/.test(line)) return '';
     if (!/(?:不调用|不得调用|禁止|废弃|只允许出现在|不会自动|不包含)/.test(line)) return line;
     const separator = Math.max(line.lastIndexOf(';'), line.lastIndexOf('；'));
     return separator >= 0 ? line.slice(separator + 1).trim() : '';
   }).filter(Boolean);
   const executableContent = executableLines.join('\n');
+  if (new RegExp(`\\bcallTool\\s*\\(\\s*\\{[^}]{0,300}?\\bname\\s*:\\s*["']${operation}["']`, 'i').test(executableContent)) return '写能力调用';
+  if (new RegExp(`\\bcallTool\\s*\\(\\s*["']${operation}["']`, 'i').test(executableContent)) return '写能力调用';
+  if (new RegExp(`\\binvoke\\s*\\(\\s*["']${operation}["']`, 'i').test(executableContent)) return '写能力调用';
   if (new RegExp(`\\b(?:const|let|var)\\s+(\\w+)\\s*=\\s*[^;\\n]*(?:\\.|\\[\\s*["'])${operation}(?:["']\\s*\\])?\\s*;[\\s\\S]{0,500}?\\b\\1\\s*\\(`, 'i').test(executableContent)) return '写能力调用';
   if (new RegExp(`\\b(?:const|let|var)\\s*\\{[^}]*\\b(publish_content|publishContent|comment|reply|like|collect|uncollect|favorite|unfavorite|follow|unfollow)\\b[^}]*\\}\\s*=.*?;[\\s\\S]{0,500}?\\b\\1\\s*\\(`, 'i').test(executableContent)) return '写能力调用';
   if (new RegExp(`\\b(?:const|let|var)\\s*\\{[^}]*\\b${operation}\\s*:\\s*(\\w+)[^}]*\\}\\s*=.*?;[\\s\\S]{0,500}?\\b\\1\\s*\\(`, 'i').test(executableContent)) return '写能力调用';
@@ -81,7 +89,7 @@ const textExtensions = new Set([
 
 export function shouldAuditTextFile(file) {
   return textExtensions.has(path.extname(file).toLowerCase())
-    || path.basename(file) === '.env.example'
+    || /^(?:\.env(?:\.example)?|\.npmrc|\.yarnrc)$/i.test(path.basename(file))
     || /^(?:dockerfile|makefile)$/i.test(path.basename(file));
 }
 
