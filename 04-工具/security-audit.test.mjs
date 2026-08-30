@@ -204,6 +204,30 @@ test('detects MCP and SDK write dispatch while permitting read calls and inert e
   ]) assert.equal(findWriteCapabilityInvocation(safeCall), null, safeCall);
 });
 
+test('keeps ordinary JavaScript strings and HTML or Markdown examples inert', () => {
+  const op = (...parts) => parts.join('');
+  const sample = `client.${op('li', 'ke')}(note)`;
+  for (const inert of [
+    `console.log("${sample}")`,
+    `const x = { sample: "${sample}" }`,
+    `<p>示例：${sample}</p>`,
+    `普通 Markdown 示例：${sample}`,
+    `[![Like](https://example.invalid/${op('li', 'ke')}(note))](#)`,
+  ]) assert.equal(findWriteCapabilityInvocation(inert), null, inert);
+});
+
+test('detects optional chaining, object dispatch and unknown aliases conservatively', () => {
+  const op = (...parts) => parts.join('');
+  for (const call of [
+    `client.callTool({name: operation, arguments: payload})`,
+    `client.invoke?.(operation, payload)`,
+    `tool[operation](payload)`,
+    `client?.${op('li', 'ke')}?.(note)`,
+    `const writer = client; writer.${op('li', 'ke')}(note)`,
+    `const dispatch = client.callTool; dispatch(operation, payload)`,
+  ]) assert.match(findWriteCapabilityInvocation(call) ?? '', /写能力调用/, call);
+});
+
 test('detects semicolonless aliases and variable write dispatch conservatively', () => {
   const op = (...parts) => parts.join('');
   for (const call of [
@@ -275,25 +299,79 @@ test('keeps Markdown inline and fenced examples inert without hiding adjacent ex
   ]) assert.match(findWriteCapabilityInvocation(executable) ?? '', /写能力调用/, executable);
 });
 
-test('CLI audits staged index content rather than a differing worktree', async () => {
+test('CLI audits the worktree including non-ignored untracked files', async () => {
   const repo = await mkdtemp(path.join(os.tmpdir(), 'xhs-security-audit-'));
   await mkdir(path.join(repo, '04-工具'));
   await copyFile(new URL('./security-audit.mjs', import.meta.url), path.join(repo, '04-工具/security-audit.mjs'));
   const runGit = (...args) => spawnSync('git', args, { cwd: repo, encoding: 'utf8' });
   assert.equal(runGit('init').status, 0);
+  await writeFile(path.join(repo, '.gitignore'), 'ignored.txt\nnode_modules/\n');
   await writeFile(path.join(repo, 'safe.txt'), ['API_', 'KEY=your_api_key\n'].join(''));
   assert.equal(runGit('add', '.').status, 0);
-  await writeFile(path.join(repo, 'safe.txt'), 'nothing sensitive in the worktree\n');
+  await writeFile(path.join(repo, 'ignored.txt'), ['API_', 'KEY=ignored-secret-value\n'].join(''));
+  await mkdir(path.join(repo, 'node_modules'));
+  await writeFile(path.join(repo, 'node_modules/pkg.txt'), ['API_', 'KEY=ignored-module-secret\n'].join(''));
 
   const audit = spawnSync(process.execPath, ['04-工具/security-audit.mjs'], { cwd: repo, encoding: 'utf8' });
   assert.equal(audit.status, 0, audit.stderr);
 
+  await writeFile(path.join(repo, 'untracked.txt'), ['API_', 'KEY=real-worktree-secret-value\n'].join(''));
+  const rejected = spawnSync(process.execPath, ['04-工具/security-audit.mjs'], { cwd: repo, encoding: 'utf8' });
+  assert.equal(rejected.status, 1, rejected.stdout + rejected.stderr);
+  assert.match(rejected.stderr, /worktree:untracked\.txt: 疑似凭据/);
+});
+
+test('CLI audits staged index content independently of the worktree', async () => {
+  const repo = await mkdtemp(path.join(os.tmpdir(), 'xhs-security-index-'));
+  await mkdir(path.join(repo, '04-工具'));
+  await copyFile(new URL('./security-audit.mjs', import.meta.url), path.join(repo, '04-工具/security-audit.mjs'));
+  const runGit = (...args) => spawnSync('git', args, { cwd: repo, encoding: 'utf8' });
+  assert.equal(runGit('init').status, 0);
   await writeFile(path.join(repo, 'safe.txt'), ['API_', 'KEY=real-staged-secret-value\n'].join(''));
-  assert.equal(runGit('add', 'safe.txt').status, 0);
+  assert.equal(runGit('add', '.').status, 0);
   await writeFile(path.join(repo, 'safe.txt'), ['API_', 'KEY=your_api_key\n'].join(''));
   const rejected = spawnSync(process.execPath, ['04-工具/security-audit.mjs'], { cwd: repo, encoding: 'utf8' });
   assert.equal(rejected.status, 1, rejected.stdout + rejected.stderr);
-  assert.match(rejected.stderr, /safe\.txt: 疑似凭据/);
+  assert.match(rejected.stderr, /index:safe\.txt: 疑似凭据/);
+});
+
+test('CLI audits blobs retained only in reachable Git history', async () => {
+  const repo = await mkdtemp(path.join(os.tmpdir(), 'xhs-security-history-'));
+  await mkdir(path.join(repo, '04-工具'));
+  await copyFile(new URL('./security-audit.mjs', import.meta.url), path.join(repo, '04-工具/security-audit.mjs'));
+  const runGit = (...args) => spawnSync('git', args, { cwd: repo, encoding: 'utf8' });
+  assert.equal(runGit('init').status, 0);
+  assert.equal(runGit('config', 'user.name', 'test').status, 0);
+  assert.equal(runGit('config', 'user.email', 'test@example.invalid').status, 0);
+  await writeFile(path.join(repo, 'history.txt'), ['API_', 'KEY=real-history-secret-value\n'].join(''));
+  assert.equal(runGit('add', '.').status, 0);
+  assert.equal(runGit('commit', '-m', 'unsafe history').status, 0);
+  await writeFile(path.join(repo, 'history.txt'), ['API_', 'KEY=your_api_key\n'].join(''));
+  assert.equal(runGit('add', 'history.txt').status, 0);
+  assert.equal(runGit('commit', '-m', 'safe head').status, 0);
+  const rejected = spawnSync(process.execPath, ['04-工具/security-audit.mjs'], { cwd: repo, encoding: 'utf8' });
+  assert.equal(rejected.status, 1, rejected.stdout + rejected.stderr);
+  assert.match(rejected.stderr, /history:.*history\.txt: 疑似凭据/);
+});
+
+test('CLI audits a reachable blob even when no historical path names it', async () => {
+  const repo = await mkdtemp(path.join(os.tmpdir(), 'xhs-security-tagged-blob-'));
+  await mkdir(path.join(repo, '04-工具'));
+  await copyFile(new URL('./security-audit.mjs', import.meta.url), path.join(repo, '04-工具/security-audit.mjs'));
+  const runGit = (...args) => spawnSync('git', args, { cwd: repo, encoding: 'utf8' });
+  assert.equal(runGit('init').status, 0);
+  assert.equal(runGit('config', 'user.name', 'test').status, 0);
+  assert.equal(runGit('config', 'user.email', 'test@example.invalid').status, 0);
+  await writeFile(path.join(repo, 'safe.txt'), 'safe\n');
+  assert.equal(runGit('add', '.').status, 0);
+  assert.equal(runGit('commit', '-m', 'safe head').status, 0);
+  const secret = ['API_', 'KEY=tagged-object-secret-value\n'].join('');
+  const blob = spawnSync('git', ['hash-object', '-w', '--stdin'], { cwd: repo, encoding: 'utf8', input: secret });
+  assert.equal(blob.status, 0);
+  assert.equal(runGit('tag', 'retained-blob', blob.stdout.trim()).status, 0);
+  const rejected = spawnSync(process.execPath, ['04-工具/security-audit.mjs'], { cwd: repo, encoding: 'utf8' });
+  assert.equal(rejected.status, 1, rejected.stdout + rejected.stderr);
+  assert.match(rejected.stderr, /history:.*疑似凭据/);
 });
 
 test('CLI fails safely when the Git index cannot be read', async () => {

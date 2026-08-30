@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -114,7 +115,7 @@ function stripCommentsOutsideStrings(content) {
       state = 'string';
       result += current;
       index += 1;
-    } else if (current === '/' && next === '/') {
+    } else if (current === '/' && next === '/' && content[index - 1] !== ':') {
       result += '  ';
       index += 2;
       state = 'line-comment';
@@ -170,6 +171,7 @@ export function findWriteCapabilityInvocation(content) {
   let inMarkdownFence = false;
   let markdownFence = '';
   const executableLines = withoutBlockComments.split(/\r?\n/).map(rawLine => {
+    if (/^\s*\[!\[.*\]\([^)]*\)\s*$/.test(rawLine)) return '';
     const fence = rawLine.match(/^\s*(?:>\s*)?(?:(?:[-*+]\s+|\d+\.\s+))?(`{3,}|~{3,})/);
     if (fence) {
       const marker = fence[1][0];
@@ -188,6 +190,8 @@ export function findWriteCapabilityInvocation(content) {
     if (!line || /^#/.test(line)) return '';
     line = line.replace(/^(?:>\s*)?(?:(?:[-*+]\s+|\d+\.\s+))?/, '').trim();
     if (!line) return '';
+    if (/^<[^>]+>.*<\/[^>]+>\s*$/.test(line)) return '';
+    if (/^[^;；{}]*[：:]\s*(?:client|sdk|mcp|redbook|tool)(?:\?\.)?[.[].*\)?[。！？]?$/i.test(line)) return '';
     if (/^(?:const|let|var)\s+\w+\s*=\s*(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`)\s*;?$/.test(line)
       && !new RegExp(`^(?:const|let|var)\\s+\\w+\\s*=\\s*["']${operation}["'](?:\\s*;)?$`, 'i').test(line)) return '';
     if (/^(?:不调用|不得调用|禁止|废弃|只读|只允许出现在|不会自动|不包含)[^;；]*`[^`]+`[^;；]*[。！？]?$/.test(line)) return '';
@@ -196,21 +200,36 @@ export function findWriteCapabilityInvocation(content) {
   }).filter(Boolean);
   const executableContent = executableLines.join('\n');
   const codeOnlyContent = maskStringLiterals(executableContent);
-  if (new RegExp(`\\bcallTool\\s*\\(\\s*\\{[^}]{0,300}?\\bname\\s*:\\s*["']${operation}["']`, 'i').test(executableContent)) return '写能力调用';
-  if (new RegExp(`\\bcallTool\\s*\\(\\s*["']${operation}["']`, 'i').test(executableContent)) return '写能力调用';
-  if (new RegExp(`\\binvoke\\s*\\(\\s*["']${operation}["']`, 'i').test(executableContent)) return '写能力调用';
-  if (/\b(?:callTool|invoke)\s*\(\s*(?!["'`{])(?:[A-Za-z_$][\w$]*)(?:\s*(?:\.[A-Za-z_$][\w$]*|\[[^\]]+\]|\([^)]*\)))*/i.test(executableContent)) return '写能力调用';
-  if (/\b(?:client|sdk|redbook|mcp)\s*\[\s*[^\]\r\n]+\]\s*\(/i.test(codeOnlyContent)) return '写能力调用';
-  if (new RegExp(`\\b(?:const|let|var)\\s+(\\w+)\\s*=\\s*[^;\\n]*(?:\\.|\\[\\s*["'])${operation}(?:["']\\s*\\])?\\s*(?:;|\\r?\\n)[\\s\\S]{0,500}?\\b\\1\\s*\\(`, 'i').test(executableContent)) return '写能力调用';
-  if (new RegExp(`\\b(?:const|let|var)\\s*\\{[^}]*\\b(publish_content|publishContent|comment|reply|like|collect|uncollect|favorite|unfavorite|follow|unfollow)\\b[^}]*\\}\\s*=[^;\\n]*(?:;|\\r?\\n)[\\s\\S]{0,500}?\\b\\1\\s*\\(`, 'i').test(executableContent)) return '写能力调用';
-  if (new RegExp(`\\b(?:const|let|var)\\s*\\{[^}]*\\b${operation}\\s*:\\s*(\\w+)[^}]*\\}\\s*=[^;\\n]*(?:;|\\r?\\n)[\\s\\S]{0,500}?\\b\\1\\s*\\(`, 'i').test(executableContent)) return '写能力调用';
-  if (new RegExp(`\\b(?:const|let|var)\\s+(\\w+)\\s*=\\s*["']${operation}["']\\s*(?:;|\\r?\\n)[\\s\\S]{0,500}?\\b(?:callTool|invoke)\\s*\\(\\s*\\1\\b`, 'i').test(executableContent)) return '写能力调用';
+  const dispatch = /\b(?:callTool|invoke)\s*(?:\?\.)?\s*\(/gi;
+  for (const match of codeOnlyContent.matchAll(dispatch)) {
+    const tail = executableContent.slice(match.index + match[0].length);
+    const literal = tail.match(/^\s*(["'])([^"']+)\1/);
+    if (literal) {
+      if (new RegExp(`^${operation}$`, 'i').test(literal[2])) return '写能力调用';
+      continue;
+    }
+    if (/^\s*\{/.test(tail)) {
+      const object = tail.slice(0, 400);
+      const nameLiteral = object.match(/\bname\s*:\s*(["'])([^"']+)\1/i);
+      if (nameLiteral && !new RegExp(`^${operation}$`, 'i').test(nameLiteral[2])) continue;
+      if (/\bname\s*:/.test(object)) return '写能力调用';
+      continue;
+    }
+    return '写能力调用';
+  }
+  if (/\b[A-Za-z_$][\w$]*\s*\[\s*[^\]\r\n]+\]\s*(?:\?\.)?\s*\(/i.test(codeOnlyContent)
+    && !/\bclass\s+[\w$]+[^{}]*\{[^{}]*\[[^\]]+\]\s*\(/i.test(codeOnlyContent)) return '写能力调用';
+  if (new RegExp(`\\b(?:const|let|var)\\s+(\\w+)\\s*=\\s*[^;\\n]*\\.${operation}\\s*(?:;|\\r?\\n)[\\s\\S]{0,500}?\\b\\1\\s*\\(`, 'i').test(codeOnlyContent)) return '写能力调用';
+  if (/\b(?:const|let|var)\s+(\w+)\s*=\s*[^;\n]*\.\s*callTool\s*(?:;|\r?\n)[\s\S]{0,500}?\b\1\s*\(/i.test(codeOnlyContent)) return '写能力调用';
+  if (new RegExp(`\\b(?:const|let|var)\\s*\\{[^}]*\\b(publish_content|publishContent|comment|reply|like|collect|uncollect|favorite|unfavorite|follow|unfollow)\\b[^}]*\\}\\s*=[^;\\n]*(?:;|\\r?\\n)[\\s\\S]{0,500}?\\b\\1\\s*\\(`, 'i').test(codeOnlyContent)) return '写能力调用';
+  if (new RegExp(`\\b(?:const|let|var)\\s*\\{[^}]*\\b${operation}\\s*:\\s*(\\w+)[^}]*\\}\\s*=[^;\\n]*(?:;|\\r?\\n)[\\s\\S]{0,500}?\\b\\1\\s*\\(`, 'i').test(codeOnlyContent)) return '写能力调用';
   for (const rawLine of executableLines) {
     const line = rawLine.trim();
+    const codeLine = maskStringLiterals(line);
     const declaration = new RegExp(`(?:\\bfunction\\s+|\\b(?:class|interface)\\s+[\\w$]+[^{}]*\\{[^{}]*|\\btype\\s+[\\w$]+\\s*=\\s*\\{[^{}]*|\\b(?:public|private|protected|static|abstract|async)\\s+)${operation}\\s*\\([^)]*\\)\\s*(?:\\{|:\\s*[^;{}]+;?)`, 'i');
     const methodSignature = new RegExp(`^(?:(?:public|private|protected|static|abstract|async)\\s+)*${operation}\\s*\\([^)]*\\)\\s*(?:\\{|:\\s*[^;{}]+;?)`, 'i');
-    if (new RegExp(`\\b${operation}\\s*\\(`, 'i').test(line) && !declaration.test(line) && !methodSignature.test(line)) return '写能力调用';
-    if (new RegExp(`\\[\\s*["']${operation}["']\\s*\\]\\s*\\(`, 'i').test(line)) return '写能力调用';
+    if (new RegExp(`\\b${operation}\\s*(?:\\?\\.)?\\s*\\(`, 'i').test(codeLine) && !declaration.test(line) && !methodSignature.test(line)) return '写能力调用';
+    if (new RegExp(`\\[\\s*["']${operation}["']\\s*\\]\\s*(?:\\?\\.)?\\s*\\(`, 'i').test(line)) return '写能力调用';
     if (new RegExp(`^(?:\\$\\s*)?(?:npx\\s+)?redbook\\s+(?:post|publish|publish_content|comment|reply|batch-reply|like|unlike|collect|uncollect|favorite|unfavorite|follow|unfollow)\\b`, 'i').test(line)) return '写能力调用';
   }
   return null;
@@ -229,39 +248,116 @@ export function shouldAuditTextFile(file) {
     || /^(?:dockerfile|makefile)$/i.test(path.basename(file));
 }
 
+function git(args, label, options = {}) {
+  const result = spawnSync('git', args, { cwd: root, encoding: 'utf8', maxBuffer: 128 * 1024 * 1024, ...options });
+  if (result.status !== 0) throw new Error(`${label}\n${result.stderr || ''}`);
+  return result.stdout;
+}
+
+function readReachableObjects(records) {
+  const input = `${records.map(record => record.oid).join('\n')}\n`;
+  const result = spawnSync('git', ['cat-file', '--batch'], { cwd: root, input, maxBuffer: 512 * 1024 * 1024 });
+  if (result.status !== 0) throw new Error(`无法批量读取可达 Git 对象\n${result.stderr?.toString('utf8') || ''}`);
+  const objects = new Map();
+  let offset = 0;
+  for (const record of records) {
+    const lineEnd = result.stdout.indexOf(10, offset);
+    if (lineEnd < 0) throw new Error(`可达 Git 对象 ${record.oid} 的批处理响应不完整`);
+    const header = result.stdout.subarray(offset, lineEnd).toString('utf8');
+    const parsed = header.match(/^([0-9a-f]+) (\w+) (\d+)$/);
+    if (!parsed || parsed[1] !== record.oid) throw new Error(`可达 Git 对象 ${record.oid} 的批处理响应无效`);
+    const size = Number(parsed[3]);
+    const start = lineEnd + 1;
+    const end = start + size;
+    if (end >= result.stdout.length || result.stdout[end] !== 10) throw new Error(`可达 Git 对象 ${record.oid} 的内容不可完整读取`);
+    if (parsed[2] === 'blob') objects.set(record.oid, result.stdout.subarray(start, end).toString('utf8'));
+    offset = end + 1;
+  }
+  return objects;
+}
+
+function inspect(scope, file, content, errors, forceContent = false) {
+  const pathError = file && findForbiddenPath(file);
+  if (pathError) errors.push(`${scope}:${file}: 禁入项（${pathError}）`);
+  if (!forceContent && (!file || !shouldAuditTextFile(file))) return;
+  const secret = findSecret(content);
+  if (secret) errors.push(`${scope}:${file}: ${secret}`);
+  const invocation = findWriteCapabilityInvocation(content);
+  if (invocation) errors.push(`${scope}:${file}: ${invocation}`);
+}
+
 async function main() {
-  const listed = spawnSync('git', ['ls-files', '--cached', '-z'], { cwd: root, encoding: 'utf8' });
-  if (listed.status !== 0) {
-    process.stderr.write(`FAIL 无法读取 Git index\n${listed.stderr || ''}`);
+  const errors = [];
+  let worktreeFiles;
+  let indexFiles;
+  try {
+    indexFiles = git(['ls-files', '--cached', '-z'], '无法读取 Git index').split('\0').filter(Boolean);
+    worktreeFiles = git(['ls-files', '--cached', '--others', '--exclude-standard', '-z'], '无法列举 Git 工作树').split('\0').filter(Boolean);
+  } catch (error) {
+    process.stderr.write(`FAIL ${error.message}`);
     process.exit(2);
   }
 
-  const files = listed.stdout.split('\0').filter(Boolean);
-  const errors = [];
-  for (const file of files) {
-    const pathError = findForbiddenPath(file);
-    if (pathError) errors.push(`${file}: 禁入项（${pathError}）`);
-  }
-
-  for (const file of files) {
-    if (!shouldAuditTextFile(file)) continue;
-    const shown = spawnSync('git', ['show', `:${file}`], { cwd: root, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 });
-    if (shown.status !== 0) {
-      process.stderr.write(`FAIL 无法读取 Git index 中的 ${file}\n${shown.stderr || ''}`);
+  for (const file of worktreeFiles) {
+    let content;
+    try {
+      content = readFileSync(path.join(root, file), 'utf8');
+    } catch (error) {
+      if (error.code === 'ENOENT') continue;
+      process.stderr.write(`FAIL 无法读取工作树中的 ${file}\n${error.message}\n`);
       process.exit(2);
     }
-    const content = shown.stdout;
-    const secret = findSecret(content);
-    if (secret) errors.push(`${file}: ${secret}`);
-    const invocation = findWriteCapabilityInvocation(content);
-    if (invocation) errors.push(`${file}: ${invocation}`);
+    inspect('worktree', file, content, errors);
+  }
+
+  for (const file of indexFiles) {
+    let content;
+    try {
+      content = git(['show', `:${file}`], `无法读取 Git index 中的 ${file}`);
+    } catch (error) {
+      process.stderr.write(`FAIL ${error.message}`);
+      process.exit(2);
+    }
+    inspect('index', file, content, errors);
+  }
+
+  const historicalBlobs = new Map();
+  try {
+    const commits = git(['rev-list', '--all'], '无法列举可达 Git 历史').split(/\r?\n/).filter(Boolean);
+    for (const commit of commits) {
+      const entries = git(['ls-tree', '-r', '-z', '--full-tree', commit], `无法读取历史树 ${commit}`).split('\0').filter(Boolean);
+      for (const entry of entries) {
+        const parsed = entry.match(/^\d+\s+blob\s+([0-9a-f]+)\t([\s\S]+)$/);
+        if (!parsed) continue;
+        const [, oid, file] = parsed;
+        inspect(`history:${commit.slice(0, 12)}`, file, '', errors);
+        if (!historicalBlobs.has(oid)) historicalBlobs.set(oid, file);
+      }
+    }
+    const reachable = git(['rev-list', '--objects', '--all'], '无法列举全部可达 Git 对象').split(/\r?\n/).filter(Boolean).map(record => {
+      const [oid, ...nameParts] = record.split(' ');
+      return { oid, file: nameParts.join(' ') };
+    });
+    const objectContents = readReachableObjects(reachable);
+    for (const { oid, file } of reachable) {
+      if (objectContents.has(oid) && !historicalBlobs.has(oid)) historicalBlobs.set(oid, file);
+    }
+    for (const [oid, file] of historicalBlobs) {
+      const content = objectContents.get(oid);
+      if (content === undefined) throw new Error(`历史 blob ${oid} 不在可达对象批处理结果中`);
+      const label = file || `<blob-${oid.slice(0, 12)}>`;
+      inspect(`history:${oid.slice(0, 12)}`, label, content, errors, !file);
+    }
+  } catch (error) {
+    process.stderr.write(`FAIL ${error.message}`);
+    process.exit(2);
   }
 
   if (errors.length) {
-    errors.forEach(error => console.error(`FAIL ${error}`));
+    [...new Set(errors)].forEach(error => console.error(`FAIL ${error}`));
     process.exit(1);
   }
-  console.log(`PASS 待提交 Git index 安全审计通过（${files.length} 个 index 文件；零凭据、零写能力调用）`);
+  console.log(`PASS 三范围安全审计通过（工作树 ${worktreeFiles.length} 个文件；index ${indexFiles.length} 个文件；历史 ${historicalBlobs.size} 个 blob；零凭据、零写能力调用）`);
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await main();
