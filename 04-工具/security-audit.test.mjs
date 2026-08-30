@@ -177,6 +177,7 @@ test('detects semicolonless aliases and variable write dispatch conservatively',
   for (const call of [
     `const fn = client.${op('li', 'ke')}\nawait fn(note)`,
     `const fn = client.${op('li', 'ke')}\nawait fn(note)\n`,
+    `const { ${op('fol', 'low')}: doFollow } = client\nawait doFollow(user)`,
     `const operation = '${op('com', 'ment')}'\nclient.callTool(operation, payload)`,
     `const operation = '${op('fol', 'low')}'; mcp.invoke(operation, payload)`,
   ]) assert.match(findWriteCapabilityInvocation(call) ?? '', /写能力调用/, call);
@@ -186,6 +187,22 @@ test('detects semicolonless aliases and variable write dispatch conservatively',
     `/* const fn = client.${op('li', 'ke')}\nawait fn(note) */`,
     `const sample = "const operation = '${op('com', 'ment')}'; client.callTool(operation, payload)"`,
   ]) assert.equal(findWriteCapabilityInvocation(inert), null, inert);
+});
+
+test('keeps HTML comments inert without hiding adjacent executable code', () => {
+  const op = (...parts) => parts.join('');
+  const call = `client.${op('li', 'ke')}(note)`;
+  for (const comment of [
+    `<!-- ${call} -->`,
+    ['<!--', call, '-->'].join('\n'),
+    `说明文字 <!-- ${call} --> 仍是纯注释`,
+  ]) assert.equal(findWriteCapabilityInvocation(comment), null, comment);
+
+  for (const executable of [
+    `<!-- ${call} -->\n${call}`,
+    `${call}\n<!-- ${call} -->`,
+    `<!-- ${call} --> ${call}`,
+  ]) assert.match(findWriteCapabilityInvocation(executable) ?? '', /写能力调用/, executable);
 });
 
 test('flags runtime-variable callTool and invoke dispatch when the operation cannot be resolved statically', () => {

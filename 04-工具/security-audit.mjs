@@ -63,7 +63,9 @@ export function findSecret(content) {
 
 export function findWriteCapabilityInvocation(content) {
   const operation = '(?:publish_content|publishContent|post|comment|reply|like|collect|uncollect|favorite|unfavorite|follow|unfollow)';
-  const withoutBlockComments = content.replace(/\/\*[\s\S]*?\*\//g, ' ');
+  const withoutBlockComments = content
+    .replace(/<!--[\s\S]*?-->/g, ' ')
+    .replace(/\/\*[\s\S]*?\*\//g, ' ');
   let inMarkdownFence = false;
   let markdownFence = '';
   const executableLines = withoutBlockComments.split(/\r?\n/).map(rawLine => {
@@ -98,8 +100,8 @@ export function findWriteCapabilityInvocation(content) {
   if (/\b(?:callTool|invoke)\s*\(\s*(?!["'`{])(?:[A-Za-z_$][\w$]*)(?:\s*(?:\.[A-Za-z_$][\w$]*|\[[^\]]+\]|\([^)]*\)))*/i.test(executableContent)) return '写能力调用';
   if (/\b(?:client|sdk|redbook|mcp)\s*\[\s*[A-Za-z_$][\w$]*\s*\]\s*\(/i.test(executableContent)) return '写能力调用';
   if (new RegExp(`\\b(?:const|let|var)\\s+(\\w+)\\s*=\\s*[^;\\n]*(?:\\.|\\[\\s*["'])${operation}(?:["']\\s*\\])?\\s*(?:;|\\r?\\n)[\\s\\S]{0,500}?\\b\\1\\s*\\(`, 'i').test(executableContent)) return '写能力调用';
-  if (new RegExp(`\\b(?:const|let|var)\\s*\\{[^}]*\\b(publish_content|publishContent|comment|reply|like|collect|uncollect|favorite|unfavorite|follow|unfollow)\\b[^}]*\\}\\s*=.*?;[\\s\\S]{0,500}?\\b\\1\\s*\\(`, 'i').test(executableContent)) return '写能力调用';
-  if (new RegExp(`\\b(?:const|let|var)\\s*\\{[^}]*\\b${operation}\\s*:\\s*(\\w+)[^}]*\\}\\s*=.*?;[\\s\\S]{0,500}?\\b\\1\\s*\\(`, 'i').test(executableContent)) return '写能力调用';
+  if (new RegExp(`\\b(?:const|let|var)\\s*\\{[^}]*\\b(publish_content|publishContent|comment|reply|like|collect|uncollect|favorite|unfavorite|follow|unfollow)\\b[^}]*\\}\\s*=[^;\\n]*(?:;|\\r?\\n)[\\s\\S]{0,500}?\\b\\1\\s*\\(`, 'i').test(executableContent)) return '写能力调用';
+  if (new RegExp(`\\b(?:const|let|var)\\s*\\{[^}]*\\b${operation}\\s*:\\s*(\\w+)[^}]*\\}\\s*=[^;\\n]*(?:;|\\r?\\n)[\\s\\S]{0,500}?\\b\\1\\s*\\(`, 'i').test(executableContent)) return '写能力调用';
   if (new RegExp(`\\b(?:const|let|var)\\s+(\\w+)\\s*=\\s*["']${operation}["']\\s*(?:;|\\r?\\n)[\\s\\S]{0,500}?\\b(?:callTool|invoke)\\s*\\(\\s*\\1\\b`, 'i').test(executableContent)) return '写能力调用';
   for (const rawLine of executableLines) {
     const line = rawLine.trim();
