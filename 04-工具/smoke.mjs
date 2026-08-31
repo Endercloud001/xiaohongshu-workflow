@@ -1,4 +1,6 @@
 import { spawnSync } from 'node:child_process';
+import { cp, mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -22,7 +24,14 @@ function run(label, command, args) {
   }
 }
 
-run('render selftest', render, [selftest]);
-run('verify fixture', verify, [fixture]);
+const tempRoot = await mkdtemp(path.join(tmpdir(), 'xhs-public-smoke-'));
+try {
+  const tempSelftest = path.join(tempRoot, '00000000-selftest');
+  await cp(selftest, tempSelftest, { recursive: true });
+  run('render selftest', render, [tempSelftest]);
+  run('verify fixture', verify, [fixture]);
+} finally {
+  await rm(tempRoot, { recursive: true, force: true });
+}
 
 console.log('PASS public smoke test');

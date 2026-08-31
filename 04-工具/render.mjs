@@ -1,7 +1,8 @@
 // 04-工具/render.mjs — HTML→PNG 渲染（规格 §8.2）
 // 用法: node 04-工具/render.mjs <运行目录>  （运行目录下须有 html/，输出到 images/）
 import puppeteer from 'puppeteer';
-import { readdir, mkdir } from 'node:fs/promises';
+import { readdir, mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -24,8 +25,10 @@ if (!files.length) { console.error('html/ 目录为空'); process.exit(2); }
 await mkdir(imgDir, { recursive: true });
 
 let browser;
+let browserProfileDir;
 try {
-  browser = await puppeteer.launch();
+  browserProfileDir = await mkdtemp(path.join(tmpdir(), 'xhs-render-profile-'));
+  browser = await puppeteer.launch({ userDataDir: browserProfileDir });
 } catch (err) {
   console.error(`启动浏览器失败: ${err.message}`);
   process.exit(2);
@@ -58,5 +61,8 @@ try {
   }
 } finally {
   await browser.close();
+  if (browserProfileDir) {
+    await rm(browserProfileDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 }).catch(() => {});
+  }
 }
 process.exit(crashed ? 2 : failed ? 1 : 0);
