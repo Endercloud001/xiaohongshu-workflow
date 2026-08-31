@@ -127,6 +127,18 @@ function astHasWrite(ast) {
     if (node.type === 'VariableDeclarator' && node.init) assignments.push([node.id, node.init]);
     else if (node.type === 'AssignmentExpression' && node.operator === '=') assignments.push([node.left, node.right]);
   });
+  const expressionPath = expression => {
+    const node = unwrap(expression);
+    if (!node) return null;
+    if (node.type === 'Identifier') return { key: node.name, dynamic: false };
+    if (node.type !== 'MemberExpression') return null;
+    const owner = expressionPath(node.object);
+    if (!owner) return null;
+    const name = propertyName(node);
+    return name === null
+      ? { key: owner.key, dynamic: true }
+      : { key: `${owner.key}.${name}`, dynamic: owner.dynamic };
+  };
   const classify = expression => {
     const node = unwrap(expression);
     if (!node) return null;
@@ -134,13 +146,15 @@ function astHasWrite(ast) {
     if (node.type === 'MemberExpression') {
       const name = propertyName(node);
       if ((name === 'call' || name === 'apply') && classify(node.object)) return classify(node.object);
-      const owner = unwrap(node.object);
-      const member = owner?.type === 'Identifier' && name !== null ? `${owner.name}.${name}` : null;
-      if (member && dangerousMembers.has(member)) return 'write';
-      if (member && dispatchMembers.has(member)) return 'dispatch';
+      const path = expressionPath(node);
+      const member = path && !path.dynamic ? path.key : null;
+      const segments = member?.split('.') ?? [];
+      const prefixes = segments.map((_, index) => segments.slice(0, index + 1).join('.'));
+      if (member && (dangerous.has(segments[0]) || prefixes.some(prefix => dangerousMembers.has(prefix)))) return 'write';
+      if (member && (dispatch.has(segments[0]) || prefixes.some(prefix => dispatchMembers.has(prefix)))) return 'dispatch';
       if (writes.has(name)) return 'write';
       if (dispatchers.has(name)) return 'dispatch';
-      if (node.computed && name === null) return 'dynamic';
+      if (path?.dynamic || (node.computed && name === null)) return 'dynamic';
     }
     if (node.type === 'CallExpression' && propertyName(node.callee) === 'bind') return classify(node.callee.object);
     if (node.type === 'ConditionalExpression' || node.type === 'LogicalExpression') {
@@ -155,48 +169,112 @@ function astHasWrite(ast) {
   let changed = true;
   while (changed) {
     changed = false;
+    const addKind = (target, kind) => {
+      const set = kind === 'write' || kind === 'dynamic' ? dangerousMembers : kind === 'dispatch' ? dispatchMembers : null;
+      if (set && !set.has(target)) { set.add(target); changed = true; }
+    };
+    const copySlots = (target, source) => {
+      for (const members of [dangerousMembers, dispatchMembers]) {
+        for (const member of [...members]) {
+          if (member !== source && !member.startsWith(`${source}.`)) continue;
+          const alias = `${target}${member.slice(source.length)}`;
+          if (!members.has(alias)) { members.add(alias); changed = true; }
+        }
+      }
+    };
+    const seedObject = (target, object) => {
+      for (const part of object.properties) {
+        if (part.type === 'SpreadElement') {
+          const source = expressionPath(part.argument);
+          if (source?.dynamic) addKind(target, 'dynamic');
+          else if (source) copySlots(target, source.key);
+          else addKind(target, classify(part.argument));
+          continue;
+        }
+        const name = propertyName({ type: 'MemberExpression', computed: part.computed, property: part.key });
+        if (name === null) { addKind(target, 'dynamic'); continue; }
+        const member = `${target}.${name}`;
+        const value = unwrap(part.value);
+        addKind(member, classify(value));
+        if (value?.type === 'ObjectExpression') seedObject(member, value);
+        const source = expressionPath(value);
+        if (source?.dynamic) addKind(member, 'dynamic');
+        else if (source) copySlots(member, source.key);
+      }
+    };
+    const propagatePattern = (target, source) => {
+      if (target.type === 'AssignmentPattern') { propagatePattern(target.left, source); return; }
+      if (target.type === 'RestElement') {
+        if (target.argument.type === 'Identifier') copySlots(target.argument.name, source);
+        return;
+      }
+      if (target.type === 'Identifier') {
+        const name = source.slice(source.lastIndexOf('.') + 1);
+        if ((writes.has(name) || dangerousMembers.has(source)) && !dangerous.has(target.name)) { dangerous.add(target.name); changed = true; }
+        if ((dispatchers.has(name) || dispatchMembers.has(source)) && !dispatch.has(target.name)) { dispatch.add(target.name); changed = true; }
+        copySlots(target.name, source);
+        return;
+      }
+      if (target.type !== 'ObjectPattern') return;
+      for (const part of target.properties) {
+        if (part.type === 'RestElement') { propagatePattern(part, source); continue; }
+        const name = propertyName({ type: 'MemberExpression', computed: part.computed, property: part.key });
+        if (name === null) {
+          markDangerousBindings(part.value);
+          continue;
+        }
+        propagatePattern(part.value, `${source}.${name}`);
+      }
+    };
+    const markDangerousBindings = target => {
+      if (!target) return;
+      if (target.type === 'Identifier') {
+        if (!dangerous.has(target.name)) { dangerous.add(target.name); changed = true; }
+        return;
+      }
+      if (target.type === 'AssignmentPattern') { markDangerousBindings(target.left); return; }
+      if (target.type === 'RestElement') { markDangerousBindings(target.argument); return; }
+      if (target.type === 'ObjectPattern') {
+        for (const part of target.properties) markDangerousBindings(part.value ?? part.argument);
+      } else if (target.type === 'ArrayPattern') {
+        for (const element of target.elements) markDangerousBindings(element);
+      }
+    };
     const propagate = (target, value) => {
       if (target.type === 'Identifier') {
         const kind = classify(value);
         const set = kind === 'write' || kind === 'dynamic' ? dangerous : kind === 'dispatch' ? dispatch : null;
         if (set && !set.has(target.name)) { set.add(target.name); changed = true; }
         const source = unwrap(value);
-        if (source?.type === 'Identifier') {
-          for (const [members, prefix] of [[dangerousMembers, `${source.name}.`], [dispatchMembers, `${source.name}.`]]) {
-            for (const member of [...members]) {
-              if (!member.startsWith(prefix)) continue;
-              const alias = `${target.name}.${member.slice(prefix.length)}`;
-              if (!members.has(alias)) { members.add(alias); changed = true; }
-            }
-          }
-        }
+        const sourcePath = expressionPath(source);
+        if (sourcePath?.dynamic) addKind(target.name, 'dynamic');
+        else if (sourcePath) copySlots(target.name, sourcePath.key);
         if (source?.type === 'ObjectExpression') {
-          for (const part of source.properties) {
-            const name = propertyName({ type: 'MemberExpression', computed: part.computed, property: part.key });
-            const kind = part.type === 'Property' ? classify(part.value) : null;
-            const set = kind === 'write' || kind === 'dynamic' ? dangerousMembers : kind === 'dispatch' ? dispatchMembers : null;
-            const member = name === null ? null : `${target.name}.${name}`;
-            if (set && member && !set.has(member)) { set.add(member); changed = true; }
-          }
+          seedObject(target.name, source);
         }
       } else if (target.type === 'MemberExpression') {
-        const owner = unwrap(target.object);
-        const name = propertyName(target);
-        const member = owner?.type === 'Identifier' && name !== null ? `${owner.name}.${name}` : null;
+        const path = expressionPath(target);
         const kind = classify(value);
-        const set = kind === 'write' || kind === 'dynamic' ? dangerousMembers : kind === 'dispatch' ? dispatchMembers : null;
-        if (set && member && !set.has(member)) { set.add(member); changed = true; }
+        if (path?.dynamic) addKind(path.key, 'dynamic');
+        else if (path) {
+          addKind(path.key, kind);
+          const source = unwrap(value);
+          if (source?.type === 'ObjectExpression') seedObject(path.key, source);
+          const sourcePath = expressionPath(source);
+          if (sourcePath?.dynamic) addKind(path.key, 'dynamic');
+          else if (sourcePath) copySlots(path.key, sourcePath.key);
+        }
       } else if (target.type === 'AssignmentPattern') {
         propagate(target.left, classify(value) ? value : target.right);
       } else if (target.type === 'ObjectPattern') {
-        const source = unwrap(value);
-        for (const part of target.properties) {
-          const name = part.computed ? part.key.value : part.key.name;
-          const member = source?.type === 'Identifier' && name !== null ? `${source.name}.${name}` : null;
-          const set = writes.has(name) || (member && dangerousMembers.has(member)) ? dangerous
-            : dispatchers.has(name) || (member && dispatchMembers.has(member)) ? dispatch : null;
-          const binding = part.value?.type === 'AssignmentPattern' ? part.value.left : part.value;
-          if (set && binding?.type === 'Identifier' && !set.has(binding.name)) { set.add(binding.name); changed = true; }
+        const source = expressionPath(value);
+        if (source?.dynamic) {
+          markDangerousBindings(target);
+        } else if (source) propagatePattern(target, source.key);
+        else if (unwrap(value)?.type === 'ObjectExpression') {
+          const temporary = `__object_pattern_${assignments.indexOf(assignments.find(item => item[0] === target))}`;
+          seedObject(temporary, unwrap(value));
+          propagatePattern(target, temporary);
         }
       } else if (target.type === 'ArrayPattern' && unwrap(value)?.type === 'ArrayExpression') {
         target.elements.forEach((element, index) => { if (element) propagate(element, unwrap(value).elements[index]); });

@@ -253,6 +253,32 @@ test('propagates aliased object slots through whole-object aliases and destructu
   ]) assert.equal(findWriteCapabilityInvocation(inert), null, inert);
 });
 
+test('propagates recursive object slots through nesting, destructuring, and spread', () => {
+  const op = (...parts) => parts.join('');
+  const write = op('publish_', 'content');
+  for (const content of [
+    `const box={p:api.${write}}; const copy={...box}; copy.p()`,
+    `const box={inner:{p:api.${write}}}; box.inner.p()`,
+    `const box={inner:{p:api.${write}}}; const {inner:{p}}=box; p()`,
+    `const box={inner:{p:api.${write}}}; const copy={...box}; copy.inner.p()`,
+    `const box={inner:{p:api.${write}}}; box[key].p()`,
+    `const box={inner:{p:api.${write}}}; const {p}=box[key]; p()`,
+    `const x=box[key]; x.p()`,
+    `const copy={...box[key]}; copy.p()`,
+    `const {[key]:{p}}=box; p()`,
+  ]) assert.match(findWriteCapabilityInvocation(content) ?? '', /写能力调用/, content);
+
+  for (const inert of [
+    `普通文档说明 const box={inner:{p:api.${write}}}; box.inner.p()，这里只是在解释规则。`,
+    `const sample="const box={inner:{p:api.${write}}}; box.inner.p()"`,
+    `// const box={inner:{p:api.${write}}}; box.inner.p()`,
+  ]) assert.equal(findWriteCapabilityInvocation(inert), null, inert);
+
+  assert.match(findWriteCapabilityInvocation(
+    `<button onclick="const box={inner:{p:api.${write}}}; const {inner:{p}}=box; p()">run</button>`,
+  ) ?? '', /写能力调用/);
+});
+
 test('rejects extensionless private-key paths before fixture and license exceptions', () => {
   for (const file of [
     '.ssh/id_rsa',
@@ -554,6 +580,32 @@ test('CLI audits aliased object slots in worktree, index, and reachable history'
   assert.equal(runGit('add', 'index.md').status, 0);
   await rm(path.join(repo, 'index.md'));
   await writeFile(path.join(repo, 'history.md'), cases.get('history.md'));
+  assert.equal(runGit('add', 'history.md').status, 0);
+  assert.equal(runGit('commit', '-m', 'unsafe history').status, 0);
+  await writeFile(path.join(repo, 'history.md'), 'safe\n');
+  assert.equal(runGit('add', 'history.md').status, 0);
+  assert.equal(runGit('commit', '-m', 'safe head').status, 0);
+
+  const rejected = runAudit(repo);
+  assert.equal(rejected.status, 1, rejected.stdout + rejected.stderr);
+  assert.match(rejected.stderr, /worktree:worktree\.html: 写能力调用/);
+  assert.match(rejected.stderr, /index:index\.md: 写能力调用/);
+  assert.match(rejected.stderr, /history:.*history\.md: 写能力调用/);
+});
+
+test('CLI audits recursive object slots in worktree, index, and reachable history', async () => {
+  const repo = await mkdtemp(path.join(os.tmpdir(), 'xhs-security-recursive-slots-'));
+  const runGit = (...args) => spawnSync('git', args, { cwd: repo, encoding: 'utf8' });
+  assert.equal(runGit('init').status, 0);
+  assert.equal(runGit('config', 'user.name', 'test').status, 0);
+  assert.equal(runGit('config', 'user.email', 'test@example.invalid').status, 0);
+  const op = (...parts) => parts.join('');
+  const write = op('publish_', 'content');
+  await writeFile(path.join(repo, 'worktree.html'), `<button onclick="const box={p:api.${write}}; const copy={...box}; copy.p()">run</button>`);
+  await writeFile(path.join(repo, 'index.md'), `const box={inner:{p:api.${write}}}; box.inner.p()`);
+  assert.equal(runGit('add', 'index.md').status, 0);
+  await rm(path.join(repo, 'index.md'));
+  await writeFile(path.join(repo, 'history.md'), `const box={inner:{p:api.${write}}}; const {inner:{p}}=box; p()`);
   assert.equal(runGit('add', 'history.md').status, 0);
   assert.equal(runGit('commit', '-m', 'unsafe history').status, 0);
   await writeFile(path.join(repo, 'history.md'), 'safe\n');
