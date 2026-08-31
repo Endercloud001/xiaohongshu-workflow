@@ -184,9 +184,15 @@ function isDocumentationParagraph(paragraph, operationPattern) {
     || /^<[^>]+>[\s\S]*<\/[^>]+>$/.test(paragraph.trim());
 }
 
-export function findWriteCapabilityInvocation(content) {
+export function findWriteCapabilityInvocation(content, scanHtmlEvents = true) {
   const operation = '(?:publish_content|publishContent|post|comment|reply|like|collect|uncollect|favorite|unfavorite|follow|unfollow)';
-  if (new RegExp(`<[^>]+\\bon\\w+\\s*=\\s*(["'])[^"']*(?:\\.|\\b)${operation}\\s*\\(`, 'i').test(content)) return '写能力调用';
+  if (scanHtmlEvents) {
+    const withoutHtmlComments = content.replace(/<!--[\s\S]*?-->/g, comment => comment.replace(/[^\r\n]/g, ' '));
+    const eventAttribute = /<[^>]*?\bon\w+\s*=\s*(["'])([\s\S]*?)\1/gi;
+    for (const match of withoutHtmlComments.matchAll(eventAttribute)) {
+      if (findWriteCapabilityInvocation(match[2], false)) return '写能力调用';
+    }
+  }
   const withoutDocumentationParagraphs = content.split(/(\r?\n\s*\r?\n)/).map(part => (
     isDocumentationParagraph(part, operation) ? part.replace(/[^\r\n]/g, ' ') : part
   )).join('');

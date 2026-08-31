@@ -207,6 +207,25 @@ test('keeps multiline Markdown and HTML policy prose inert but not embedded exec
   ]) assert.match(findWriteCapabilityInvocation(executable) ?? '', /写能力调用/, executable);
 });
 
+test('detects optional and dynamic write dispatch in HTML event attributes only', () => {
+  const code = (...parts) => parts.join('');
+  const event = (name, handler) => `<button on${name}="${handler}">Run</button>`;
+  for (const markup of [
+    event('click', code('client?.li', 'ke?.(note)')),
+    event('click', code('client[opera', 'tion](note)')),
+    event('click', code('client[opera', 'tion]?.(note)')),
+    event('focus', code('client.call', 'Tool(operation, payload)')),
+    event('change', code('mcp.invoke?.(operation, payload)')),
+  ]) assert.match(findWriteCapabilityInvocation(markup) ?? '', /写能力调用/, markup);
+
+  for (const inert of [
+    `<div data-example="${code('client[opera', 'tion](note)')}">Example</div>`,
+    event('click', `showExample('${code('client[opera', 'tion](note)')}')`),
+    `<!-- ${event('click', code('client[opera', 'tion](note)'))} -->`,
+    `<p>示例：${code('client[opera', 'tion](note)')}</p>`,
+  ]) assert.equal(findWriteCapabilityInvocation(inert), null, inert);
+});
+
 test('does not mistake method declarations for write invocations', () => {
   const inert = (...parts) => parts.join('');
   for (const content of [
