@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { createReadStream } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse } from 'acorn';
@@ -12,6 +12,8 @@ const MAX_TEXT_BLOB_BYTES = 16 * 1024 * 1024;
 const writes = new Set(['publish_content', 'publishContent', 'post', 'comment', 'reply', 'like', 'collect', 'uncollect', 'favorite', 'unfavorite', 'follow', 'unfollow']);
 const dispatchers = new Set(['callTool', 'invoke']);
 const allowedExamples = new Set(['.env.example', '01-账号/账号档案.example.md', '05-验收/已发档案.example.jsonl']);
+const privateKeyArmor = new RegExp(['-----BEGIN ', '(?:(?:RSA|DSA|EC|OPENSSH|SSH2 ENCRYPTED|ENCRYPTED) )?', 'PRIVATE KEY', '(?: BLOCK)?-----'].join(''));
+const pgpPrivateKeyArmor = new RegExp(['-----BEGIN PGP ', 'PRIVATE KEY BLOCK', '-----'].join(''));
 
 export function findForbiddenPath(input) {
   const file = input.replaceAll('\\', '/');
@@ -19,6 +21,7 @@ export function findForbiddenPath(input) {
   const base = path.posix.basename(lower);
   if (/(^|\/)node_modules(\/|$)/i.test(file)) return 'node_modules';
   if (/\.(?:pem|key|ppk|pvk|p7b|p7c|p8|p12|pfx|crt|cer|der|csr|pkcs8|pkcs12|jks|keystore)$/i.test(file)) return '密钥 / 证书文件';
+  if (/(^|\/)(?:\.ssh\/)?id_(?:rsa|dsa|ecdsa|ed25519)$/i.test(file) || /(^|\/)keys?\/id_(?:rsa|dsa|ecdsa|ed25519)$/i.test(file)) return 'SSH 私钥文件';
   if (/\.(?:zip|tar|tgz|gz|bz2|xz|7z|rar)$/i.test(file)) return '压缩包';
   if (/\.(?:log|trace)$/i.test(file)) return '日志文件';
   const example = allowedExamples.has(file) || /(?:^|\.)example(?:\.|$)/i.test(base) || /(^|\/)fixtures?(\/|$)/i.test(file) || /^(?:licen[cs]e|copying|notice)(?:\.|$)/i.test(base);
@@ -53,7 +56,7 @@ export function findSecret(content) {
     if (/\bAKIA[0-9A-Z]{16}\b/.test(line)) return '疑似凭据 AWS access key';
     if (/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/.test(line)) return '疑似凭据 JWT';
     if (/\b(?:https?|wss?):\/\/[^\s/@:]+:[^\s/@]+@/i.test(line)) return '疑似凭据 URL';
-    if (/-----BEGIN (?:RSA |EC |OPENSSH |ENCRYPTED )?PRIVATE KEY-----/.test(line) || /^PuTTY-User-Key-File-[23]:\s*/.test(line)) return '私钥内容';
+    if (privateKeyArmor.test(line) || pgpPrivateKeyArmor.test(line) || /^PuTTY-User-Key-File-[23]:\s*/.test(line)) return '私钥内容';
   }
   return null;
 }
@@ -102,8 +105,16 @@ function fragments(content) {
     return line.replace(/(?<!\[)(`+)(?!`)[^`]*\1/g, ' ');
   }).join('\n');
   if (parseProgram(cleaned)) return [...interpolatedTemplates, cleaned];
-  const candidates = cleaned.split(/\r?\n/).flatMap(line => [line, ...line.split(/[;；]/).slice(1)]).map(line => line.trim());
-  return [...interpolatedTemplates, ...candidates.filter(line => line && parseProgram(line))];
+  const lines = cleaned.split(/\r?\n/);
+  const candidates = lines.flatMap(line => [line, ...line.split(/[;；]/).slice(1)]).map(line => line.trim()).filter(line => line && parseProgram(line));
+  for (let start = 0; start < lines.length; start += 1) {
+    if (!/^\s*(?:const|let|var|await|async\s+function|function|class|if\s*\(|for\s*\(|while\s*\(|try\s*\{|switch\s*\(|return\b|throw\b|[A-Za-z_$][\w$]*(?:\s*[.([]|\s*\?\.))/.test(lines[start])) continue;
+    for (let end = lines.length; end > start + 1; end -= 1) {
+      const source = lines.slice(start, end).join('\n').trim();
+      if (parseProgram(source)) { candidates.push(source); break; }
+    }
+  }
+  return [...interpolatedTemplates, ...candidates];
 }
 
 function astHasWrite(ast) {
@@ -124,24 +135,39 @@ function astHasWrite(ast) {
       if (dispatchers.has(name)) return 'dispatch';
       if (node.computed && name === null) return 'dynamic';
     }
+    if (node.type === 'CallExpression' && propertyName(node.callee) === 'bind') return classify(node.callee.object);
+    if (node.type === 'ConditionalExpression' || node.type === 'LogicalExpression') {
+      const left = classify(node.type === 'ConditionalExpression' ? node.consequent : node.left);
+      const right = classify(node.type === 'ConditionalExpression' ? node.alternate : node.right);
+      if (left === 'write' || left === 'dynamic' || right === 'write' || right === 'dynamic') return 'write';
+      return left || right;
+    }
     if (node.type === 'SequenceExpression') return classify(node.expressions.at(-1));
     return null;
   };
   let changed = true;
   while (changed) {
     changed = false;
-    for (const [target, value] of assignments) {
+    const propagate = (target, value) => {
       if (target.type === 'Identifier') {
         const kind = classify(value);
         const set = kind === 'write' || kind === 'dynamic' ? dangerous : kind === 'dispatch' ? dispatch : null;
         if (set && !set.has(target.name)) { set.add(target.name); changed = true; }
+      } else if (target.type === 'AssignmentPattern') {
+        propagate(target.left, classify(value) ? value : target.right);
       } else if (target.type === 'ObjectPattern') {
         for (const part of target.properties) {
           const name = part.computed ? part.key.value : part.key.name;
           const set = writes.has(name) ? dangerous : dispatchers.has(name) ? dispatch : null;
-          if (set && part.value?.name && !set.has(part.value.name)) { set.add(part.value.name); changed = true; }
+          const binding = part.value?.type === 'AssignmentPattern' ? part.value.left : part.value;
+          if (set && binding?.type === 'Identifier' && !set.has(binding.name)) { set.add(binding.name); changed = true; }
         }
+      } else if (target.type === 'ArrayPattern' && unwrap(value)?.type === 'ArrayExpression') {
+        target.elements.forEach((element, index) => { if (element) propagate(element, unwrap(value).elements[index]); });
       }
+    };
+    for (const [target, value] of assignments) {
+      propagate(target, value);
     }
   }
   let found = false;
@@ -191,6 +217,33 @@ function inspect(scope, file, content, errors, forced = false) {
   if (call) errors.push(`${scope}:${file}: ${call}`);
 }
 
+async function collectLimited(stream) {
+  const chunks = [];
+  let size = 0;
+  let oversized = false;
+  for await (const chunk of stream) {
+    size += chunk.length;
+    if (size > MAX_TEXT_BLOB_BYTES) { oversized = true; continue; }
+    chunks.push(chunk);
+  }
+  return { oversized, size, bytes: oversized ? null : Buffer.concat(chunks, size) };
+}
+
+async function readGitObject(spec, label) {
+  const child = spawn('git', ['show', spec], { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] });
+  let stderr = '';
+  child.stderr.setEncoding('utf8');
+  child.stderr.on('data', chunk => { if (stderr.length < 8192) stderr += chunk; });
+  const result = await collectLimited(child.stdout);
+  const status = await new Promise(resolve => child.on('close', resolve));
+  if (status !== 0) throw new Error(`${label}\n${stderr}`);
+  return result;
+}
+
+function reportOversized(scope, file, size, errors) {
+  errors.push(`${scope}:${file}: 超大对象无法安全审计（${size} bytes > ${MAX_TEXT_BLOB_BYTES} bytes）`);
+}
+
 async function readBlobs(records, errors) {
   const child = spawn('git', ['cat-file', '--batch'], { cwd: root, stdio: ['pipe', 'pipe', 'pipe'] });
   let stderr = '';
@@ -218,8 +271,7 @@ async function readBlobs(records, errors) {
       const bytes = buffer.subarray(0, current.size);
       buffer = buffer.subarray(current.size + 1);
       const label = current.file || `<blob-${current.oid.slice(0, 12)}>`;
-      if (current.size > MAX_TEXT_BLOB_BYTES && (!current.file || shouldAuditTextFile(current.file))) errors.push(`history:${current.oid.slice(0, 12)}:${label}: 超大文本对象无法安全审计（>${MAX_TEXT_BLOB_BYTES} bytes）`);
-      else inspect(`history:${current.oid.slice(0, 12)}`, label, bytes.toString('utf8'), errors, !current.file);
+      inspect(`history:${current.oid.slice(0, 12)}`, label, bytes.toString('utf8'), errors, !current.file);
       current = null;
       index += 1;
     }
@@ -238,12 +290,29 @@ async function main() {
     worktreeFiles = git(['ls-files', '--cached', '--others', '--exclude-standard', '-z'], '无法列举 Git 工作树').split('\0').filter(Boolean);
   } catch (error) { process.stderr.write(`FAIL ${error.message}`); process.exit(2); }
   for (const file of worktreeFiles) {
-    try { inspect('worktree', file, readFileSync(path.join(root, file), 'utf8'), errors); }
+    try {
+      const result = await collectLimited(createReadStream(path.join(root, file)));
+      if (result.oversized) reportOversized('worktree', file, result.size, errors);
+      else inspect('worktree', file, result.bytes.toString('utf8'), errors);
+    }
     catch (error) { if (error.code !== 'ENOENT') { process.stderr.write(`FAIL 无法读取工作树中的 ${file}\n${error.message}\n`); process.exit(2); } }
   }
-  for (const file of indexFiles) {
-    try { inspect('index', file, git(['show', `:${file}`], `无法读取 Git index 中的 ${file}`), errors); }
-    catch (error) { process.stderr.write(`FAIL ${error.message}`); process.exit(2); }
+  try {
+    if (indexFiles.some(file => /[\r\n]/.test(file))) throw new Error('Git index 路径包含无法安全批处理的控制字符');
+    const indexChecks = indexFiles.length ? git(['cat-file', '--batch-check=%(objecttype) %(objectsize)'], '无法检查 Git index 对象', { input: `${indexFiles.map(file => `:${file}`).join('\n')}\n` }).split(/\r?\n/).filter(Boolean) : [];
+    if (indexChecks.length !== indexFiles.length) throw new Error('Git index 对象检查不完整');
+    for (let index = 0; index < indexFiles.length; index += 1) {
+      const file = indexFiles[index];
+      const [type, rawSize] = indexChecks[index].split(' ');
+      const size = Number(rawSize);
+      if (type !== 'blob' || !Number.isSafeInteger(size)) throw new Error(`Git index 对象元数据无效：${file}`);
+      if (size > MAX_TEXT_BLOB_BYTES) { reportOversized('index', file, size, errors); continue; }
+      const result = await readGitObject(`:${file}`, `无法读取 Git index 中的 ${file}`);
+      if (result.oversized) reportOversized('index', file, result.size, errors);
+      else inspect('index', file, result.bytes.toString('utf8'), errors);
+    }
+  } catch (error) {
+    process.stderr.write(`FAIL ${error.message}`); process.exit(2);
   }
   let blobs = [];
   try {
@@ -256,11 +325,21 @@ async function main() {
     if (objects.length) {
       const checks = git(['cat-file', '--batch-check=%(objectname) %(objecttype) %(objectsize)'], '无法检查可达 Git 对象', { input: `${objects.map(item => item.oid).join('\n')}\n` }).split(/\r?\n/).filter(Boolean);
       if (checks.length !== objects.length) throw new Error('可达 Git 对象类型检查不完整');
-      blobs = objects.filter((_, index) => checks[index].split(' ')[1] === 'blob');
+      blobs = objects.flatMap((object, index) => {
+        const [oid, type, rawSize] = checks[index].split(' ');
+        if (oid !== object.oid || !Number.isSafeInteger(Number(rawSize))) throw new Error(`可达 Git 对象元数据无效：${checks[index]}`);
+        return type === 'blob' ? [{ ...object, size: Number(rawSize) }] : [];
+      });
       const changed = git(['-c', 'core.quotePath=false', 'log', '--all', '--format=', '--name-only', '-z', '--diff-filter=AM'], '无法列举历史变更路径').split('\0').map(file => file.replace(/^\r?\n+/, '')).filter(Boolean);
       for (const file of changed) { const reason = findForbiddenPath(file); if (reason) errors.push(`history:path:${file}: 禁入项（${reason}）`); }
       for (const blob of blobs) { const reason = blob.file && findForbiddenPath(blob.file); if (reason) errors.push(`history:${blob.oid.slice(0, 12)}:${blob.file}: 禁入项（${reason}）`); }
-      await readBlobs(blobs, errors);
+      const readableBlobs = [];
+      for (const blob of blobs) {
+        const label = blob.file || `<blob-${blob.oid.slice(0, 12)}>`;
+        if (blob.size > MAX_TEXT_BLOB_BYTES) reportOversized(`history:${blob.oid.slice(0, 12)}`, label, blob.size, errors);
+        else readableBlobs.push(blob);
+      }
+      await readBlobs(readableBlobs, errors);
     }
   } catch (error) { process.stderr.write(`FAIL ${error.message}`); process.exit(2); }
   if (errors.length) { [...new Set(errors)].forEach(error => console.error(`FAIL ${error}`)); process.exit(1); }

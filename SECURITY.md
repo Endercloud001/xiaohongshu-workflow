@@ -47,14 +47,14 @@ npm run audit:security
 `audit:security` 分别列举并标注三个范围：
 
 1. **当前工作树**：`git ls-files --cached --others --exclude-standard`，覆盖仍存在的 tracked 文件和所有未跟踪、未被 `.gitignore` 排除的文件；已删除的 tracked 路径在工作树范围没有内容可读，但仍由 index / 历史范围覆盖。`.git/` 不参与工作树遍历，未跟踪且已忽略的 `node_modules/` 等依赖目录也不扫描；若这类路径已进入 index 或历史，则仍按禁入项报告。
-2. **Git index**：`git ls-files --cached` 列举路径，`git show :path` 读取每个暂存对象，因此与工作树副本独立。
-3. **全部可达历史**：`git rev-list --objects --all` 单次枚举可达对象，`git cat-file --batch-check` 先筛出 blob，再由一个持续的 `git cat-file --batch` 子进程逐 blob 流式读取；相同 blob 内容只读一次，不再对每个提交重复展开整棵树。`git log --all --name-only --diff-filter=AM` 另行覆盖曾进入可达提交的路径名，因此历史中的禁入扩展名不会因内容重复或后来改名而漏掉；由 tag 直接引用、没有路径名的 blob 也会扫描内容。
+2. **Git index**：`git ls-files --cached` 列举路径，`git cat-file --batch-check` 先取得暂存 blob 的类型和大小，再以流方式读取不超过上限的 `:path` 对象，因此与工作树副本独立。
+3. **全部可达历史**：`git rev-list --objects --all` 单次枚举可达对象，`git cat-file --batch-check` 先筛出 blob 并取得大小；超限 blob 立即拒绝，其余再由一个持续的 `git cat-file --batch` 子进程逐 blob 流式读取。相同 blob 内容只读一次，不再对每个提交重复展开整棵树。`git log --all --name-only --diff-filter=AM` 另行覆盖曾进入可达提交的路径名，因此历史中的禁入扩展名不会因内容重复或后来改名而漏掉；由 tag 直接引用、没有路径名的 blob 也会扫描内容。
 
 任一范围无法列举、任一 index / 历史树 / 可达对象无法完整读取或 Git 批处理响应不完整时，审计均以退出码 2 失败，不会把“不可读”当成“安全”。历史扫描只覆盖当前 refs 可达的对象；reflog、悬空 / 已回收对象、其他 clone 中未取得的 refs、LFS 服务端内容与 submodule 内部历史不在本地 Git 可达对象集合内，必须另行审计。超大仓库的全历史扫描成本随可达提交和对象数量增长，本命令不会悄悄降级成仅扫 HEAD 或 index。
 
-凭据占位符必须完整匹配整个值，不能以前缀或子串形式夹带真实内容。JavaScript 使用 Acorn 生成 ESTree AST，再沿赋值与解构关系追踪成员别名、后赋值别名、序列表达式、可选链、计算成员、模板插值和 `callTool` / `invoke` 分派；无法静态确定的动态成员或分派按写能力保守报警。HTML 使用 parse5 按 WHATWG 语法解析，只把 `<script>` 内容和 `on*` 事件属性（含无引号属性）送入 JavaScript 分析。模板文本、普通 JS 字符串、注释、正则字面量、普通 Markdown / HTML 说明、非事件属性、行内代码和围栏示例保持惰性；`${...}` 表达式及文档边界外可解析的真实语句仍会扫描。
+凭据占位符必须完整匹配整个值，不能以前缀或子串形式夹带真实内容。JavaScript 使用 Acorn 生成 ESTree AST，再沿赋值与解构关系追踪成员别名、`bind` 别名、条件 / 逻辑表达式、默认值、数组模式、后赋值别名、序列表达式、可选链、计算成员、模板插值和 `callTool` / `invoke` 分派；无法静态确定的动态成员或分派按写能力保守报警。HTML 使用 parse5 按 WHATWG 语法解析，只把 `<script>` 内容和 `on*` 事件属性（含无引号属性）送入 JavaScript 分析。模板文本、普通 JS 字符串、注释、正则字面量、普通 Markdown / HTML 说明、非事件属性、行内代码和围栏示例保持惰性；`${...}` 表达式及文档边界外可解析的真实语句仍会扫描。
 
-内容扫描只对已知文本扩展名执行；无路径名的可达 blob 会强制检查，但含 NUL 的对象按二进制处理，不把任意字节误解码为文本。单个应审计文本 blob 上限为 16 MiB，超过上限会明确拒绝而不是静默跳过；路径禁入规则不受大小或二进制判定影响。图片及其他二进制的语义、LFS 服务端对象与 submodule 内部历史仍需人工或对应仓库另行审计。
+内容扫描只对已知文本扩展名执行；无路径名的可达 blob 会强制检查，但含 NUL 的限额内对象按二进制处理，不把任意字节误解码为文本。单个对象的 16 MiB 上限统一适用于工作树、Git index 和全部可达历史 blob；工作树和 index 边读边限额，历史先检查对象大小，任何范围超限都明确拒绝且不会把超大对象完整拼接或解码。路径禁入规则优先于 LICENSE、example 和 fixture 例外，也不受大小或二进制判定影响。图片及其他限额内二进制的语义、LFS 服务端对象与 submodule 内部历史仍需人工或对应仓库另行审计。
 
 本审计器新增的解析依赖为 `acorn` 8.18.0（MIT）、`acorn-walk` 8.3.5（MIT）、`parse5` 7.3.0（MIT），后者的传递依赖 `entities` 6.0.1 为 BSD-2-Clause；准确版本、完整许可证元数据与完整性摘要记录在 `package-lock.json`，上游许可证文本随 npm 包发布。
 

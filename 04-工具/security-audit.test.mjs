@@ -215,6 +215,44 @@ test('detects sequence-expression and distant multiline aliases without a fixed 
   ]) assert.match(findWriteCapabilityInvocation(content) ?? '', /写能力调用/, content);
 });
 
+test('propagates executable write aliases through common JavaScript data-flow forms', () => {
+  const op = (...parts) => parts.join('');
+  const write = op('publish_', 'content');
+  for (const content of [
+    `const p = api.${write}.bind(api); p()`,
+    `const p = ok ? api.${write} : api.post; p()`,
+    `const p = api.${write} || api.post; p()`,
+    `const {${write}: p = fallback}=api; p()`,
+    `const [p]=[api.${write}]; p()`,
+    `说明文字跨行，下面才是实际代码。\nconst p=api.${write};\np()`,
+  ]) assert.match(findWriteCapabilityInvocation(content) ?? '', /写能力调用/, content);
+
+  for (const prose of [
+    `普通文档说明 const p=api.${write}; p()，这里只是在解释禁用规则。`,
+    `不要执行以下写操作：\n\`const p=api.${write}; p()\``,
+  ]) assert.equal(findWriteCapabilityInvocation(prose), null, prose);
+});
+
+test('rejects extensionless private-key paths before fixture and license exceptions', () => {
+  for (const file of [
+    '.ssh/id_rsa',
+    '.ssh/id_ed25519',
+    'keys/id_dsa',
+    'fixtures/.ssh/id_rsa',
+    'fixtures/keys/id_ed25519',
+    'LICENSE/id_dsa',
+  ]) assert.match(findForbiddenPath(file) ?? '', /密钥|私钥|凭据/i, file);
+});
+
+test('detects additional private-key armor formats', () => {
+  const armor = (...parts) => parts.join('');
+  for (const content of [
+    armor('-----BEGIN DSA ', 'PRIVATE KEY-----'),
+    armor('-----BEGIN PGP ', 'PRIVATE KEY BLOCK-----'),
+    armor('-----BEGIN SSH2 ENCRYPTED ', 'PRIVATE KEY-----'),
+  ]) assert.match(findSecret(content) ?? '', /私钥/, content);
+});
+
 test('keeps multiline Markdown and HTML policy prose inert but not embedded executable code', () => {
   const op = (...parts) => parts.join('');
   const call = `client.${op('publish_', 'content')}(payload)`;
@@ -538,6 +576,67 @@ test('CLI history scan stays within a basic linear performance boundary', async 
   const audit = runAudit(repo, 10_000);
   assert.equal(audit.status, 0, audit.stdout + audit.stderr);
   assert.equal(audit.error, undefined, audit.error?.message);
+});
+
+test('CLI enforces the 16 MiB limit in worktree, index, and reachable history', async () => {
+  const oversized = Buffer.alloc(16 * 1024 * 1024 + 1, 0x61);
+  const makeRepo = async name => {
+    const repo = await mkdtemp(path.join(os.tmpdir(), `xhs-security-limit-${name}-`));
+    const runGit = (...args) => spawnSync('git', args, { cwd: repo, encoding: 'utf8' });
+    assert.equal(runGit('init').status, 0);
+    assert.equal(runGit('config', 'user.name', 'test').status, 0);
+    assert.equal(runGit('config', 'user.email', 'test@example.invalid').status, 0);
+    return { repo, runGit };
+  };
+
+  const worktree = await makeRepo('worktree');
+  await writeFile(path.join(worktree.repo, 'large.txt'), oversized);
+  let rejected = runAudit(worktree.repo);
+  assert.equal(rejected.status, 1, rejected.stdout + rejected.stderr);
+  assert.match(rejected.stderr, /worktree:large\.txt:.*超大/);
+
+  const index = await makeRepo('index');
+  await writeFile(path.join(index.repo, 'large.txt'), oversized);
+  assert.equal(index.runGit('add', 'large.txt').status, 0);
+  await rm(path.join(index.repo, 'large.txt'));
+  rejected = runAudit(index.repo);
+  assert.equal(rejected.status, 1, rejected.stdout + rejected.stderr);
+  assert.match(rejected.stderr, /index:large\.txt:.*超大/);
+
+  const history = await makeRepo('history');
+  await writeFile(path.join(history.repo, 'large.txt'), oversized);
+  assert.equal(history.runGit('add', 'large.txt').status, 0);
+  assert.equal(history.runGit('commit', '-m', 'large history').status, 0);
+  assert.equal(history.runGit('rm', 'large.txt').status, 0);
+  assert.equal(history.runGit('commit', '-m', 'remove large history').status, 0);
+  rejected = runAudit(history.repo);
+  assert.equal(rejected.status, 1, rejected.stdout + rejected.stderr);
+  assert.match(rejected.stderr, /history:.*large\.txt:.*超大/);
+});
+
+test('CLI rejects an oversized pathless tag blob under a constrained heap', async () => {
+  const repo = await mkdtemp(path.join(os.tmpdir(), 'xhs-security-large-tag-'));
+  const runGit = (...args) => spawnSync('git', args, { cwd: repo, encoding: 'utf8' });
+  assert.equal(runGit('init').status, 0);
+  assert.equal(runGit('config', 'user.name', 'test').status, 0);
+  assert.equal(runGit('config', 'user.email', 'test@example.invalid').status, 0);
+  await writeFile(path.join(repo, 'safe.txt'), 'safe\n');
+  assert.equal(runGit('add', 'safe.txt').status, 0);
+  assert.equal(runGit('commit', '-m', 'safe head').status, 0);
+  const objectFile = path.join(repo, 'large-object');
+  await writeFile(objectFile, Buffer.alloc(48 * 1024 * 1024, 0x61));
+  const blob = runGit('hash-object', '-w', objectFile);
+  assert.equal(blob.status, 0, blob.stderr);
+  assert.equal(runGit('tag', 'large-retained-blob', blob.stdout.trim()).status, 0);
+  await rm(objectFile);
+  const audit = spawnSync(process.execPath, [auditScript], {
+    cwd: repo,
+    encoding: 'utf8',
+    env: { ...process.env, SECURITY_AUDIT_ROOT: repo, NODE_OPTIONS: '--max-old-space-size=64' },
+    timeout: 20_000,
+  });
+  assert.equal(audit.status, 1, audit.stdout + audit.stderr);
+  assert.match(audit.stderr, /history:.*超大/);
 });
 
 test('CLI fails safely when the Git index cannot be read', async () => {
