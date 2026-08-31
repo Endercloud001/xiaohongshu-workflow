@@ -488,6 +488,50 @@ test('CLI audits the worktree including non-ignored untracked files', async () =
   assert.match(rejected.stderr, /worktree:untracked\.txt: 疑似凭据/);
 });
 
+test('CLI rejects final-review executable syntax in real Markdown and HTML files', async () => {
+  const repo = await mkdtemp(path.join(os.tmpdir(), 'xhs-security-final-syntax-'));
+  const runGit = (...args) => spawnSync('git', args, { cwd: repo, encoding: 'utf8' });
+  assert.equal(runGit('init').status, 0);
+  const op = (...parts) => parts.join('');
+  const write = op('publish_', 'content');
+  const cases = new Map([
+    ['bind.md', `const p=api.${write}.bind(api); p()`],
+    ['conditional.md', `const p=ready ? api.${write} : fallback; p()`],
+    ['logical.md', `const p=api.${write} || fallback; p()`],
+    ['default-object.md', `const {${write}: p=fallback}=api; p()`],
+    ['array.md', `const [p]=[api.${write}]; p()`],
+    ['call.md', `api.${write}.call(api, payload)`],
+    ['apply.md', `api.${write}.apply(api, [payload])`],
+    ['object-slot.md', `const slot={p:api.${write}}; slot.p()`],
+    ['later-assignment.md', `let p; p=api.${write}; p()`],
+    ['event.html', `<button onclick=api.${write}()>run</button>`],
+    ['regex.md', `const matcher=/https?:\\/\\//;\napi.${write}(payload)`],
+    ['control-flow.md', `if (ready) { prepare(); }\napi.${write}(payload)`],
+    ['prose-boundary.md', `普通 Markdown 说明第一行。\n说明继续到第二行。\nconst p=api.${write};\np()`],
+    ['html-boundary.html', `<p>普通 HTML 说明\n继续说明。</p>\n<script>\nconst p=api.${write};\np()\n</script>`],
+  ]);
+  for (const [file, content] of cases) await writeFile(path.join(repo, file), content);
+  const rejected = runAudit(repo);
+  assert.equal(rejected.status, 1, rejected.stdout + rejected.stderr);
+  for (const file of cases.keys()) assert.match(rejected.stderr, new RegExp(`worktree:${file.replace('.', '\\.')}: 写能力调用`), file);
+});
+
+test('CLI rejects final-review extensionless key paths and private-key armor', async () => {
+  const repo = await mkdtemp(path.join(os.tmpdir(), 'xhs-security-final-keys-'));
+  const runGit = (...args) => spawnSync('git', args, { cwd: repo, encoding: 'utf8' });
+  assert.equal(runGit('init').status, 0);
+  await mkdir(path.join(repo, '.ssh'));
+  for (const name of ['id_rsa', 'id_ed25519', 'id_dsa']) await writeFile(path.join(repo, '.ssh', name), 'fixture\n');
+  const armor = (...parts) => parts.join('');
+  await writeFile(path.join(repo, 'dsa.txt'), armor('-----BEGIN DSA ', 'PRIVATE KEY-----'));
+  await writeFile(path.join(repo, 'pgp.txt'), armor('-----BEGIN PGP ', 'PRIVATE KEY BLOCK-----'));
+  await writeFile(path.join(repo, 'ssh2.txt'), armor('-----BEGIN SSH2 ENCRYPTED ', 'PRIVATE KEY-----'));
+  const rejected = runAudit(repo);
+  assert.equal(rejected.status, 1, rejected.stdout + rejected.stderr);
+  for (const name of ['id_rsa', 'id_ed25519', 'id_dsa']) assert.match(rejected.stderr, new RegExp(`worktree:\\.ssh/${name}: 禁入项`), name);
+  for (const name of ['dsa', 'pgp', 'ssh2']) assert.match(rejected.stderr, new RegExp(`worktree:${name}\\.txt: 私钥内容`), name);
+});
+
 test('CLI audits staged index content independently of the worktree', async () => {
   const repo = await mkdtemp(path.join(os.tmpdir(), 'xhs-security-index-'));
   await mkdir(path.join(repo, '04-工具'));
@@ -646,4 +690,47 @@ test('CLI fails safely when the Git index cannot be read', async () => {
   const audit = runAudit(directory);
   assert.equal(audit.status, 2, audit.stdout + audit.stderr);
   assert.match(audit.stderr, /Git index/);
+});
+
+test('CLI fails safely when worktree, index, or history content is unreadable', async () => {
+  const makeRepo = async name => {
+    const repo = await mkdtemp(path.join(os.tmpdir(), `xhs-security-unreadable-${name}-`));
+    const runGit = (...args) => spawnSync('git', args, { cwd: repo, encoding: 'utf8' });
+    assert.equal(runGit('init').status, 0);
+    assert.equal(runGit('config', 'user.name', 'test').status, 0);
+    assert.equal(runGit('config', 'user.email', 'test@example.invalid').status, 0);
+    return { repo, runGit };
+  };
+  const removeLooseObject = async (repo, oid) => rm(path.join(repo, '.git', 'objects', oid.slice(0, 2), oid.slice(2)));
+
+  const worktree = await makeRepo('worktree');
+  await writeFile(path.join(worktree.repo, 'tracked.txt'), 'safe\n');
+  assert.equal(worktree.runGit('add', 'tracked.txt').status, 0);
+  await rm(path.join(worktree.repo, 'tracked.txt'));
+  await mkdir(path.join(worktree.repo, 'tracked.txt'));
+  let failed = runAudit(worktree.repo);
+  assert.equal(failed.status, 2, failed.stdout + failed.stderr);
+  assert.match(failed.stderr, /无法读取工作树/);
+
+  const index = await makeRepo('index');
+  await writeFile(path.join(index.repo, 'staged.txt'), 'staged only\n');
+  assert.equal(index.runGit('add', 'staged.txt').status, 0);
+  const indexOid = index.runGit('rev-parse', ':staged.txt').stdout.trim();
+  await removeLooseObject(index.repo, indexOid);
+  failed = runAudit(index.repo);
+  assert.equal(failed.status, 2, failed.stdout + failed.stderr);
+  assert.match(failed.stderr, /Git index|index 对象/);
+
+  const history = await makeRepo('history');
+  await writeFile(path.join(history.repo, 'history.txt'), 'old history\n');
+  assert.equal(history.runGit('add', 'history.txt').status, 0);
+  assert.equal(history.runGit('commit', '-m', 'old').status, 0);
+  const historyOid = history.runGit('rev-parse', 'HEAD:history.txt').stdout.trim();
+  await writeFile(path.join(history.repo, 'history.txt'), 'current safe\n');
+  assert.equal(history.runGit('add', 'history.txt').status, 0);
+  assert.equal(history.runGit('commit', '-m', 'current').status, 0);
+  await removeLooseObject(history.repo, historyOid);
+  failed = runAudit(history.repo);
+  assert.equal(failed.status, 2, failed.stdout + failed.stderr);
+  assert.match(failed.stderr, /可达|历史|对象/);
 });

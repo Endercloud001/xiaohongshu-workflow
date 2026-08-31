@@ -120,6 +120,8 @@ function fragments(content) {
 function astHasWrite(ast) {
   const dangerous = new Set();
   const dispatch = new Set();
+  const dangerousMembers = new Set();
+  const dispatchMembers = new Set();
   const assignments = [];
   walk.full(ast, node => {
     if (node.type === 'VariableDeclarator' && node.init) assignments.push([node.id, node.init]);
@@ -131,6 +133,11 @@ function astHasWrite(ast) {
     if (node.type === 'Identifier') return writes.has(node.name) || dangerous.has(node.name) ? 'write' : dispatch.has(node.name) ? 'dispatch' : null;
     if (node.type === 'MemberExpression') {
       const name = propertyName(node);
+      if ((name === 'call' || name === 'apply') && classify(node.object)) return classify(node.object);
+      const owner = unwrap(node.object);
+      const member = owner?.type === 'Identifier' && name !== null ? `${owner.name}.${name}` : null;
+      if (member && dangerousMembers.has(member)) return 'write';
+      if (member && dispatchMembers.has(member)) return 'dispatch';
       if (writes.has(name)) return 'write';
       if (dispatchers.has(name)) return 'dispatch';
       if (node.computed && name === null) return 'dynamic';
@@ -153,6 +160,23 @@ function astHasWrite(ast) {
         const kind = classify(value);
         const set = kind === 'write' || kind === 'dynamic' ? dangerous : kind === 'dispatch' ? dispatch : null;
         if (set && !set.has(target.name)) { set.add(target.name); changed = true; }
+        const source = unwrap(value);
+        if (source?.type === 'ObjectExpression') {
+          for (const part of source.properties) {
+            const name = propertyName({ type: 'MemberExpression', computed: part.computed, property: part.key });
+            const kind = part.type === 'Property' ? classify(part.value) : null;
+            const set = kind === 'write' || kind === 'dynamic' ? dangerousMembers : kind === 'dispatch' ? dispatchMembers : null;
+            const member = name === null ? null : `${target.name}.${name}`;
+            if (set && member && !set.has(member)) { set.add(member); changed = true; }
+          }
+        }
+      } else if (target.type === 'MemberExpression') {
+        const owner = unwrap(target.object);
+        const name = propertyName(target);
+        const member = owner?.type === 'Identifier' && name !== null ? `${owner.name}.${name}` : null;
+        const kind = classify(value);
+        const set = kind === 'write' || kind === 'dynamic' ? dangerousMembers : kind === 'dispatch' ? dispatchMembers : null;
+        if (set && member && !set.has(member)) { set.add(member); changed = true; }
       } else if (target.type === 'AssignmentPattern') {
         propagate(target.left, classify(value) ? value : target.right);
       } else if (target.type === 'ObjectPattern') {
@@ -218,15 +242,17 @@ function inspect(scope, file, content, errors, forced = false) {
 }
 
 async function collectLimited(stream) {
-  const chunks = [];
+  const decoder = new TextDecoder();
+  let content = '';
   let size = 0;
   let oversized = false;
   for await (const chunk of stream) {
     size += chunk.length;
-    if (size > MAX_TEXT_BLOB_BYTES) { oversized = true; continue; }
-    chunks.push(chunk);
+    if (size > MAX_TEXT_BLOB_BYTES) { oversized = true; content = ''; continue; }
+    content += decoder.decode(chunk, { stream: true });
   }
-  return { oversized, size, bytes: oversized ? null : Buffer.concat(chunks, size) };
+  if (!oversized) content += decoder.decode();
+  return { oversized, size, content: oversized ? null : content };
 }
 
 async function readGitObject(spec, label) {
@@ -251,34 +277,57 @@ async function readBlobs(records, errors) {
   child.stderr.on('data', chunk => { stderr += chunk; });
   for (const record of records) child.stdin.write(`${record.oid}\n`);
   child.stdin.end();
-  let buffer = Buffer.alloc(0);
-  let current = null;
-  let index = 0;
-  for await (const chunk of child.stdout) {
-    buffer = Buffer.concat([buffer, chunk]);
-    while (true) {
-      if (!current) {
-        const newline = buffer.indexOf(10);
-        if (newline < 0) break;
-        const header = buffer.subarray(0, newline).toString('utf8');
-        buffer = buffer.subarray(newline + 1);
-        const match = header.match(/^([0-9a-f]+) blob (\d+)$/);
-        if (!match || records[index]?.oid !== match[1]) throw new Error(`历史 blob 批处理响应无效：${header}`);
-        current = { ...records[index], size: Number(match[2]) };
-      }
-      if (buffer.length < current.size + 1) break;
-      if (buffer[current.size] !== 10) throw new Error(`历史 blob ${current.oid} 的内容不可完整读取`);
-      const bytes = buffer.subarray(0, current.size);
-      buffer = buffer.subarray(current.size + 1);
-      const label = current.file || `<blob-${current.oid.slice(0, 12)}>`;
-      inspect(`history:${current.oid.slice(0, 12)}`, label, bytes.toString('utf8'), errors, !current.file);
-      current = null;
-      index += 1;
+  const streamChunks = async function* (stream) { for await (const piece of stream) yield piece; };
+  const iterator = streamChunks(child.stdout);
+  let chunk = Buffer.alloc(0);
+  let offset = 0;
+  const refill = async () => {
+    while (offset >= chunk.length) {
+      const next = await iterator.next();
+      if (next.done) return false;
+      chunk = next.value;
+      offset = 0;
     }
+    return true;
+  };
+  const readByte = async () => (await refill()) ? chunk[offset++] : null;
+  const readLine = async () => {
+    let line = '';
+    while (true) {
+      const byte = await readByte();
+      if (byte === null) return null;
+      if (byte === 10) return line;
+      if (line.length >= 1024) throw new Error('历史 blob 批处理响应头过长');
+      line += String.fromCharCode(byte);
+    }
+  };
+  const readContent = async size => {
+    const decoder = new TextDecoder();
+    let content = '';
+    let remaining = size;
+    while (remaining > 0) {
+      if (!(await refill())) return null;
+      const length = Math.min(remaining, chunk.length - offset);
+      content += decoder.decode(chunk.subarray(offset, offset + length), { stream: true });
+      offset += length;
+      remaining -= length;
+    }
+    return content + decoder.decode();
+  };
+  let index = 0;
+  for (const record of records) {
+    const header = await readLine();
+    const match = header?.match(/^([0-9a-f]+) blob (\d+)$/);
+    if (!match || record.oid !== match[1] || Number(match[2]) > MAX_TEXT_BLOB_BYTES) throw new Error(`历史 blob 批处理响应无效：${header ?? '[EOF]'}`);
+    const content = await readContent(Number(match[2]));
+    if (content === null || await readByte() !== 10) throw new Error(`历史 blob ${record.oid} 的内容不可完整读取`);
+    const label = record.file || `<blob-${record.oid.slice(0, 12)}>`;
+    inspect(`history:${record.oid.slice(0, 12)}`, label, content, errors, !record.file);
+    index += 1;
   }
   const status = await new Promise(resolve => child.on('close', resolve));
   if (status !== 0) throw new Error(`无法流式读取可达历史 blob\n${stderr}`);
-  if (current || buffer.length || index !== records.length) throw new Error('可达历史 blob 流不完整');
+  if (await readByte() !== null || index !== records.length) throw new Error('可达历史 blob 流不完整');
 }
 
 async function main() {
@@ -293,7 +342,7 @@ async function main() {
     try {
       const result = await collectLimited(createReadStream(path.join(root, file)));
       if (result.oversized) reportOversized('worktree', file, result.size, errors);
-      else inspect('worktree', file, result.bytes.toString('utf8'), errors);
+      else inspect('worktree', file, result.content, errors);
     }
     catch (error) { if (error.code !== 'ENOENT') { process.stderr.write(`FAIL 无法读取工作树中的 ${file}\n${error.message}\n`); process.exit(2); } }
   }
@@ -309,7 +358,7 @@ async function main() {
       if (size > MAX_TEXT_BLOB_BYTES) { reportOversized('index', file, size, errors); continue; }
       const result = await readGitObject(`:${file}`, `无法读取 Git index 中的 ${file}`);
       if (result.oversized) reportOversized('index', file, result.size, errors);
-      else inspect('index', file, result.bytes.toString('utf8'), errors);
+      else inspect('index', file, result.content, errors);
     }
   } catch (error) {
     process.stderr.write(`FAIL ${error.message}`); process.exit(2);
