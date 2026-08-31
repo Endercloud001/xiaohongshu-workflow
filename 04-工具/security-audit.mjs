@@ -80,30 +80,39 @@ function parseProgram(source) {
   return null;
 }
 
+function stripMarkdownFences(content) {
+  let fence = null;
+  return content.split(/\r?\n/).map(line => {
+    const marker = line.match(/^\s*(?:>\s*)?(?:(?:[-*+]\s+|\d+\.\s+))?(`{3,}|~{3,})/);
+    if (marker) { fence = fence ? null : marker[1][0]; return ''; }
+    if (fence) return '';
+    return line;
+  }).join('\n');
+}
+
+function stripMarkdownInlineCode(content) {
+  return content.replace(/(?<!\[)(`+)(?!`)[^`]*\1/g, ' ');
+}
+
 function fragments(content) {
-  if (/<\/?[A-Za-z][^>]*>|<!--[\s\S]*?-->/.test(content)) {
+  const withoutFences = stripMarkdownFences(content);
+  if (/<\/?[A-Za-z][^>]*>|<!--[\s\S]*?-->/.test(withoutFences)) {
     const result = [];
     const visit = node => {
       if (node.tagName === 'script') result.push((node.childNodes || []).filter(child => child.nodeName === '#text').map(child => child.value).join(''));
       for (const attr of node.attrs || []) if (/^on[a-z0-9_-]+$/i.test(attr.name)) result.push(attr.value);
       if (node.nodeName === '#text' && node.parentNode?.nodeName === '#document-fragment') {
-        for (const line of node.value.split(/\r?\n/)) if (parseProgram(line.trim())) result.push(line.trim());
+        for (const line of stripMarkdownInlineCode(node.value).split(/\r?\n/)) if (parseProgram(line.trim())) result.push(line.trim());
       }
       if (node.content) visit(node.content);
       for (const child of node.childNodes || []) visit(child);
     };
-    visit(parseFragment(content));
+    visit(parseFragment(withoutFences));
     return result;
   }
   if (parseProgram(content)) return [content];
   const interpolatedTemplates = [...content.matchAll(/`(?:\\.|[^`])*\$\{[\s\S]*?\}(?:\\.|[^`])*`/g)].map(match => match[0]);
-  let fence = null;
-  const cleaned = content.split(/\r?\n/).map(line => {
-    const marker = line.match(/^\s*(?:>\s*)?(?:(?:[-*+]\s+|\d+\.\s+))?(`{3,}|~{3,})/);
-    if (marker) { fence = fence ? null : marker[1][0]; return ''; }
-    if (fence) return '';
-    return line.replace(/(?<!\[)(`+)(?!`)[^`]*\1/g, ' ');
-  }).join('\n');
+  const cleaned = stripMarkdownInlineCode(withoutFences);
   if (parseProgram(cleaned)) return [...interpolatedTemplates, cleaned];
   const lines = cleaned.split(/\r?\n/);
   const candidates = lines.flatMap(line => [line, ...line.split(/[;；]/).slice(1)]).map(line => line.trim()).filter(line => line && parseProgram(line));

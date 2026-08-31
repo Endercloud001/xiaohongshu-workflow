@@ -449,6 +449,23 @@ test('keeps multiline prose and ordinary HTML text inert', () => {
   ]) assert.equal(findWriteCapabilityInvocation(prose), null, prose);
 });
 
+test('keeps Markdown examples inert inside mixed Markdown and HTML documents', () => {
+  const op = (...parts) => parts.join('');
+  const example = `client.${op('com', 'ment')}(note)`;
+  for (const markdown of [
+    `普通 Markdown 说明 ${example} 不会执行。`,
+    `普通 Markdown 行内示例：\`${example}\`。`,
+    ['```js', example, '```'].join('\n'),
+    ['<p>普通 HTML 标签</p>', '', '```js', example, '```'].join('\n'),
+  ]) assert.equal(findWriteCapabilityInvocation(markdown), null, markdown);
+
+  for (const executable of [
+    ['<p>普通 HTML 标签</p>', '', `<script>${example}</script>`].join('\n'),
+    ['普通 Markdown 说明。', '', `<button onclick="${example}">run</button>`].join('\n'),
+    ['<p>普通 HTML 标签</p>', '', 'const run = () => client.like(note);', 'run();'].join('\n'),
+  ]) assert.match(findWriteCapabilityInvocation(executable) ?? '', /写能力调用/, executable);
+});
+
 test('detects semicolonless aliases and variable write dispatch conservatively', () => {
   const op = (...parts) => parts.join('');
   for (const call of [
@@ -579,6 +596,39 @@ test('CLI accepts historical audit fixtures but still rejects real calls in test
   audit = runAudit(repo);
   assert.equal(audit.status, 1, audit.stdout + audit.stderr);
   assert.match(audit.stderr, /worktree:04-工具\/security-audit\.test\.mjs: 写能力调用/);
+});
+
+test('CLI accepts mixed Markdown HTML examples but rejects real HTML write code', async () => {
+  const repo = await mkdtemp(path.join(os.tmpdir(), 'xhs-security-mixed-markdown-html-'));
+  const runGit = (...args) => spawnSync('git', args, { cwd: repo, encoding: 'utf8' });
+  assert.equal(runGit('init').status, 0);
+  const op = (...parts) => parts.join('');
+  const example = `client.${op('com', 'ment')}(note)`;
+  await writeFile(path.join(repo, 'safe.md'), [
+    '# Safe mixed document',
+    '',
+    '<p>普通 HTML 标签</p>',
+    '',
+    `行内示例：\`${example}\`。`,
+    '',
+    '```js',
+    example,
+    '```',
+    '',
+  ].join('\n'));
+  let audit = runAudit(repo);
+  assert.equal(audit.status, 0, audit.stdout + audit.stderr);
+
+  await writeFile(path.join(repo, 'script.md'), `<p>普通 HTML 标签</p>\n<script>${example}</script>\n`);
+  audit = runAudit(repo);
+  assert.equal(audit.status, 1, audit.stdout + audit.stderr);
+  assert.match(audit.stderr, /worktree:script\.md: 写能力调用/);
+
+  await rm(path.join(repo, 'script.md'));
+  await writeFile(path.join(repo, 'handler.md'), `<button onclick="${example}">run</button>\n`);
+  audit = runAudit(repo);
+  assert.equal(audit.status, 1, audit.stdout + audit.stderr);
+  assert.match(audit.stderr, /worktree:handler\.md: 写能力调用/);
 });
 
 test('CLI rejects final-review executable syntax in real Markdown and HTML files', async () => {
