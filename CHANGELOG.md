@@ -1,1 +1,39 @@
-# ChangelogAll notable changes to this repository will be recorded here.## [Unreleased]### Added- Public documentation scaffold for installation, integrations, troubleshooting, contribution, Issue and PR flows- GitHub CI, Issue templates and PR template for the public repository boundary### Changed- Clarified public repo boundaries, version strategy and verification commands### Notes- Semantic versioning applies: incompatible public interface or artifact changes raise major, compatible additions raise minor, documentation and fixes raise patch## [1.0.0] - 2026-08-31### Added- First public release draft for the public branch `public/main`- Public documentation set for installation, integrations, troubleshooting, contribution, security boundaries, Issue and PR flows- Third-party license inventory and public boundary notes### Changed- Clarified that the repository ships a deterministic workflow plus a manual publish pack, not automatic publishing or engagement- Aligned the public release note with `README.md`, `LICENSE`, `THIRD_PARTY_LICENSES/README.md`, and the public test commands### Notes- Scope: read-only research, visual production, hard validation, and manual publish packs- Limits: no automatic publishing, no auto interaction, no private account data, and no unauthorized third-party assets- Manual steps: GitHub visibility switch, default-branch confirmation, and release publishing still require GitHub UI or equivalent external access- After the public switch, rerun `npm ci`, `npm run check:config`, `npm run smoke`, `npm test`, and `npm run verify -- 06-产出/00000000-verify-fixture` on a clean clone- Release tag for the first public cut: `v1.0.0`
+# Changelog
+
+All notable changes to this repository will be recorded here.
+
+## [Unreleased]
+
+### Added
+
+- Public documentation scaffold for installation, integrations, troubleshooting, contribution, Issue and PR flows
+- GitHub CI, Issue templates and PR template for the public repository boundary
+
+### Changed
+
+- Clarified public repo boundaries, version strategy and verification commands
+
+### Notes
+
+- Semantic versioning applies: incompatible public interface or artifact changes raise major, compatible additions raise minor, documentation and fixes raise patch
+
+## [1.0.0] - 2026-08-31
+
+### Added
+
+- First public release draft for the public branch `public/main`
+- Public documentation set for installation, integrations, troubleshooting, contribution, security boundaries, Issue and PR flows
+- Third-party license inventory and public boundary notes
+
+### Changed
+
+- Clarified that the repository ships a deterministic workflow plus a manual publish pack, not automatic publishing or engagement
+- Aligned the public release note with `README.md`, `LICENSE`, `THIRD_PARTY_LICENSES/README.md`, and the public test commands
+
+### Notes
+
+- Scope: read-only research, visual production, hard validation, and manual publish packs
+- Limits: no automatic publishing, no auto interaction, no private account data, and no unauthorized third-party assets
+- Manual steps: GitHub visibility switch, default-branch confirmation, and release publishing still require GitHub UI or equivalent external access
+- After the public switch, rerun `npm ci`, `npm run check:config`, `npm run smoke`, `npm test`, and `npm run verify -- 06-产出/00000000-verify-fixture` on a clean clone
+- Release tag for the first public cut: `v1.0.0`

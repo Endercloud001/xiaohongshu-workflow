@@ -1,1 +1,30 @@
-run: 00000000-verify-fixturetopic: 公共 verify 夹具profile_version: 1mode: 深耕domain: verificationworkflow_mode: slim_manual_publishresearch_backend: nonenodes:  - id: research    status: ok    tool: local-fixture    retries: 0topic_gate:  status: go  total: 10  rounds: 1visual_router:  mode: semi  cover_skill: cover-anchor-system  inner_skill: xhs-visual-director  fallback_skill: guizang-social-card-skillvisual_gate:  status: pass  fallback_pages: []publish:  mode: manual_only  status: archived_only  note_url: nullconfirmations: []degradations: []
+run: 00000000-verify-fixture
+topic: 公共 verify 夹具
+profile_version: 1
+mode: 深耕
+domain: verification
+workflow_mode: slim_manual_publish
+research_backend: none
+nodes:
+  - id: research
+    status: ok
+    tool: local-fixture
+    retries: 0
+topic_gate:
+  status: go
+  total: 10
+  rounds: 1
+visual_router:
+  mode: semi
+  cover_skill: cover-anchor-system
+  inner_skill: xhs-visual-director
+  fallback_skill: guizang-social-card-skill
+visual_gate:
+  status: pass
+  fallback_pages: []
+publish:
+  mode: manual_only
+  status: archived_only
+  note_url: null
+confirmations: []
+degradations: []
