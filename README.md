@@ -90,8 +90,9 @@ npm run verify -- 06-产出/00000000-verify-fixture
 - `npm run check:config`
 - `npm run smoke`
 - `npm run verify -- 06-产出/00000000-verify-fixture`
+- `npm run audit:security`
 
-CI 也只跑这些确定性命令，不注入 cookies、平台登录态或 AI API key。
+CI 也只跑这些确定性命令，不注入 cookies、平台登录态或 AI API key。提交前再补跑 `npm run audit:security`。
 
 ## 故障排查
 

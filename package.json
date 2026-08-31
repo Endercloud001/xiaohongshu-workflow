@@ -1,15 +1,29 @@
 {
   "name": "xhs-workflow",
-  "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "小红书成稿工作流的本地工具依赖",
+  "description": "可公开的小红书图文工作流：只读研究、视觉生产、硬校验和人工发布包",
   "packageManager": "npm@10.9.2",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Endercloud001/xiaohongshu-workflow.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Endercloud001/xiaohongshu-workflow/issues"
+  },
+  "keywords": [
+    "xiaohongshu",
+    "小红书",
+    "workflow",
+    "puppeteer",
+    "smoke-test",
+    "publish-pack"
+  ],
   "engines": {
     "node": ">=20 <25"
   },
   "scripts": {
-    "test": "node 04-工具/normalize-image.test.mjs && node 04-工具/normalize-cover.test.mjs && node 04-工具/install-path.test.mjs && node 04-工具/check-config.test.mjs && node 04-工具/security-audit.test.mjs",
+    "test": "node 04-工具/normalize-image.test.mjs && node 04-工具/normalize-cover.test.mjs && node 04-工具/install-path.test.mjs && node 04-工具/check-config.test.mjs && node 04-工具/smoke.test.mjs && node 04-工具/security-audit.test.mjs",
     "check:config": "node 04-工具/check-config.mjs",
     "audit:security": "node 04-工具/security-audit.mjs",
     "smoke": "node 04-工具/smoke.mjs",

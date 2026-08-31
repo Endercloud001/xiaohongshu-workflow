@@ -25,6 +25,7 @@ npm run check:config
 npm run smoke
 npm test
 npm run verify -- 06-产出/00000000-verify-fixture
+npm run audit:security
 ```
 
 如果改到安装、外部集成或公开边界，再补跑相关文档检查。

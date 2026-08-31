@@ -17,6 +17,9 @@ function runScript(relativePath, env = process.env) {
 
 assert.equal(packageJson.scripts['check:config'], 'node 04-工具/check-config.mjs');
 assert.equal(packageJson.scripts.smoke, 'node 04-工具/smoke.mjs');
+assert.equal(packageJson.scripts.test, 'node 04-工具/normalize-image.test.mjs && node 04-工具/normalize-cover.test.mjs && node 04-工具/install-path.test.mjs && node 04-工具/check-config.test.mjs && node 04-工具/smoke.test.mjs && node 04-工具/security-audit.test.mjs');
+assert.equal(packageJson.scripts.verify, 'node 04-工具/verify.mjs');
+assert.equal(packageJson.scripts.render, 'node 04-工具/render.mjs');
 
 {
   const result = runScript('04-工具/check-config.mjs');
@@ -36,7 +39,7 @@ assert.equal(packageJson.scripts.smoke, 'node 04-工具/smoke.mjs');
 {
   const result = runScript('04-工具/smoke.mjs');
   assert.equal(result.status, 0, result.stderr || result.stdout);
-  assert.match(result.stdout, /PASS 最小 fixture smoke 通过/);
+  assert.match(result.stdout, /PASS public smoke test/);
 }
 
 console.log('PASS 安装与最小运行路径自测通过');
