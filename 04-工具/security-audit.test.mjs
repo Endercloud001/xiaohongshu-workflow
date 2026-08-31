@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, copyFile, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, copyFile, writeFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
 import {
@@ -11,6 +12,14 @@ import {
   findWriteCapabilityInvocation,
   shouldAuditTextFile,
 } from './security-audit.mjs';
+
+const auditScript = fileURLToPath(new URL('./security-audit.mjs', import.meta.url));
+const runAudit = (repo, timeout = 15_000) => spawnSync(process.execPath, [auditScript], {
+  cwd: repo,
+  encoding: 'utf8',
+  env: { ...process.env, SECURITY_AUDIT_ROOT: repo },
+  timeout,
+});
 
 test('audits common text source extensions but skips binary assets', () => {
   for (const file of ['src/app.js', 'src/app.ts', 'src/view.tsx', 'scripts/tool.ps1', 'config/settings.toml', 'tool.sh', '.npmrc']) {
@@ -102,6 +111,16 @@ test('sensitive key and certificate extensions override example, fixture and lic
   assert.equal(findForbiddenPath('fixtures/README.md'), null);
 });
 
+test('rejects archives and logs even inside public examples or fixtures', () => {
+  for (const file of [
+    'release.zip',
+    'fixtures/debug.log',
+    'examples/archive.example.tar',
+    'backup.tar.gz',
+    'bundle.tgz',
+  ]) assert.match(findForbiddenPath(file) ?? '', /压缩|日志/i, file);
+});
+
 test('detects common API key, JWT, AWS, bearer, password and embedded URL credentials', () => {
   const value = (...parts) => parts.join('');
   const cases = [
@@ -113,6 +132,13 @@ test('detects common API key, JWT, AWS, bearer, password and embedded URL creden
     value('endpoint=https://alice:', 'real-password@localhost:18060/mcp'),
   ];
   for (const content of cases) assert.match(findSecret(content) ?? '', /疑似凭据|私钥/, content);
+});
+
+test('detects encrypted private keys and PuTTY private key content', () => {
+  const encrypted = ['-----BEGIN ENCRYPTED ', 'PRIVATE KEY-----'].join('');
+  const putty = ['PuTTY-User-Key-File-', '3: ssh-rsa'].join('');
+  assert.match(findSecret(encrypted) ?? '', /私钥/);
+  assert.match(findSecret(putty) ?? '', /私钥/);
 });
 
 test('detects executable publish and interaction calls but permits prohibition docs', () => {
@@ -294,6 +320,43 @@ test('detects optional chaining, object dispatch and unknown aliases conservativ
   ]) assert.match(findWriteCapabilityInvocation(call) ?? '', /写能力调用/, call);
 });
 
+test('detects sequence calls, computed aliases, invoke aliases and later assignments', () => {
+  const op = (...parts) => parts.join('');
+  for (const call of [
+    `(0, client.${op('li', 'ke')})?.(note)`,
+    `const fn = client['${op('li', 'ke')}']; fn(note)`,
+    'const dispatch = client.invoke; dispatch(operation, payload)',
+    `let fn; fn = client.${op('li', 'ke')}; fn(note)`,
+    'let dispatch; dispatch = client.invoke; dispatch(operation, payload)',
+    `if (ok) /https?:\\/\\//.test(url); client.${op('li', 'ke')}(note);`,
+  ]) assert.match(findWriteCapabilityInvocation(call) ?? '', /写能力调用/, call);
+});
+
+test('analyzes template interpolation expressions but not template text', () => {
+  const op = (...parts) => parts.join('');
+  assert.equal(findWriteCapabilityInvocation(`\`client.${op('li', 'ke')}(note)\``), null);
+  assert.match(findWriteCapabilityInvocation(`\`result: \${client.${op('li', 'ke')}(note)}\``) ?? '', /写能力调用/);
+});
+
+test('parses quoted and unquoted HTML handlers and scripts as executable code', () => {
+  const op = (...parts) => parts.join('');
+  for (const html of [
+    `<button onclick=client.${op('li', 'ke')}(note)>go</button>`,
+    `<button onclick="(0, client.${op('li', 'ke')})?.(note)">go</button>`,
+    `<script>const fn = client['${op('li', 'ke')}']; fn(note)</script>`,
+  ]) assert.match(findWriteCapabilityInvocation(html) ?? '', /写能力调用/, html);
+
+  assert.equal(findWriteCapabilityInvocation(`<div data-example="client.${op('li', 'ke')}(note)"></div>`), null);
+});
+
+test('keeps multiline prose and ordinary HTML text inert', () => {
+  const op = (...parts) => parts.join('');
+  for (const prose of [
+    `普通说明跨越多行，提到了 client.${op('li', 'ke')}(note)\n但这里只是在解释禁止调用。`,
+    `<section><p>普通说明提到 client.${op('li', 'ke')}(note)</p><p>这不是可执行代码。</p></section>`,
+  ]) assert.equal(findWriteCapabilityInvocation(prose), null, prose);
+});
+
 test('detects semicolonless aliases and variable write dispatch conservatively', () => {
   const op = (...parts) => parts.join('');
   for (const call of [
@@ -378,11 +441,11 @@ test('CLI audits the worktree including non-ignored untracked files', async () =
   await mkdir(path.join(repo, 'node_modules'));
   await writeFile(path.join(repo, 'node_modules/pkg.txt'), ['API_', 'KEY=ignored-module-secret\n'].join(''));
 
-  const audit = spawnSync(process.execPath, ['04-工具/security-audit.mjs'], { cwd: repo, encoding: 'utf8' });
+  const audit = runAudit(repo);
   assert.equal(audit.status, 0, audit.stderr);
 
   await writeFile(path.join(repo, 'untracked.txt'), ['API_', 'KEY=real-worktree-secret-value\n'].join(''));
-  const rejected = spawnSync(process.execPath, ['04-工具/security-audit.mjs'], { cwd: repo, encoding: 'utf8' });
+  const rejected = runAudit(repo);
   assert.equal(rejected.status, 1, rejected.stdout + rejected.stderr);
   assert.match(rejected.stderr, /worktree:untracked\.txt: 疑似凭据/);
 });
@@ -396,7 +459,7 @@ test('CLI audits staged index content independently of the worktree', async () =
   await writeFile(path.join(repo, 'safe.txt'), ['API_', 'KEY=real-staged-secret-value\n'].join(''));
   assert.equal(runGit('add', '.').status, 0);
   await writeFile(path.join(repo, 'safe.txt'), ['API_', 'KEY=your_api_key\n'].join(''));
-  const rejected = spawnSync(process.execPath, ['04-工具/security-audit.mjs'], { cwd: repo, encoding: 'utf8' });
+  const rejected = runAudit(repo);
   assert.equal(rejected.status, 1, rejected.stdout + rejected.stderr);
   assert.match(rejected.stderr, /index:safe\.txt: 疑似凭据/);
 });
@@ -415,7 +478,7 @@ test('CLI audits blobs retained only in reachable Git history', async () => {
   await writeFile(path.join(repo, 'history.txt'), ['API_', 'KEY=your_api_key\n'].join(''));
   assert.equal(runGit('add', 'history.txt').status, 0);
   assert.equal(runGit('commit', '-m', 'safe head').status, 0);
-  const rejected = spawnSync(process.execPath, ['04-工具/security-audit.mjs'], { cwd: repo, encoding: 'utf8' });
+  const rejected = runAudit(repo);
   assert.equal(rejected.status, 1, rejected.stdout + rejected.stderr);
   assert.match(rejected.stderr, /history:.*history\.txt: 疑似凭据/);
 });
@@ -435,16 +498,53 @@ test('CLI audits a reachable blob even when no historical path names it', async 
   const blob = spawnSync('git', ['hash-object', '-w', '--stdin'], { cwd: repo, encoding: 'utf8', input: secret });
   assert.equal(blob.status, 0);
   assert.equal(runGit('tag', 'retained-blob', blob.stdout.trim()).status, 0);
-  const rejected = spawnSync(process.execPath, ['04-工具/security-audit.mjs'], { cwd: repo, encoding: 'utf8' });
+  const rejected = runAudit(repo);
   assert.equal(rejected.status, 1, rejected.stdout + rejected.stderr);
   assert.match(rejected.stderr, /history:.*疑似凭据/);
+});
+
+test('CLI rejects forbidden paths retained in the index and reachable history', async () => {
+  const repo = await mkdtemp(path.join(os.tmpdir(), 'xhs-security-forbidden-path-'));
+  const runGit = (...args) => spawnSync('git', args, { cwd: repo, encoding: 'utf8' });
+  assert.equal(runGit('init').status, 0);
+  assert.equal(runGit('config', 'user.name', 'test').status, 0);
+  assert.equal(runGit('config', 'user.email', 'test@example.invalid').status, 0);
+  await writeFile(path.join(repo, 'staged.zip'), 'not really an archive\n');
+  assert.equal(runGit('add', 'staged.zip').status, 0);
+  await rm(path.join(repo, 'staged.zip'));
+  const indexRejected = runAudit(repo);
+  assert.equal(indexRejected.status, 1, indexRejected.stdout + indexRejected.stderr);
+  assert.match(indexRejected.stderr, /index:staged\.zip: 禁入项/);
+
+  assert.equal(runGit('commit', '-m', 'retained forbidden path').status, 0);
+  assert.equal(runGit('rm', 'staged.zip').status, 0);
+  assert.equal(runGit('commit', '-m', 'remove forbidden path').status, 0);
+  const historyRejected = runAudit(repo);
+  assert.equal(historyRejected.status, 1, historyRejected.stdout + historyRejected.stderr);
+  assert.match(historyRejected.stderr, /history:.*staged\.zip: 禁入项/);
+});
+
+test('CLI history scan stays within a basic linear performance boundary', async () => {
+  const repo = await mkdtemp(path.join(os.tmpdir(), 'xhs-security-performance-'));
+  const runGit = (...args) => spawnSync('git', args, { cwd: repo, encoding: 'utf8' });
+  assert.equal(runGit('init').status, 0);
+  assert.equal(runGit('config', 'user.name', 'test').status, 0);
+  assert.equal(runGit('config', 'user.email', 'test@example.invalid').status, 0);
+  for (let index = 0; index < 40; index += 1) {
+    await writeFile(path.join(repo, 'safe.txt'), `safe revision ${index}\n`);
+    assert.equal(runGit('add', 'safe.txt').status, 0);
+    assert.equal(runGit('commit', '-m', `safe ${index}`).status, 0);
+  }
+  const audit = runAudit(repo, 10_000);
+  assert.equal(audit.status, 0, audit.stdout + audit.stderr);
+  assert.equal(audit.error, undefined, audit.error?.message);
 });
 
 test('CLI fails safely when the Git index cannot be read', async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'xhs-security-no-index-'));
   await mkdir(path.join(directory, '04-工具'));
   await copyFile(new URL('./security-audit.mjs', import.meta.url), path.join(directory, '04-工具/security-audit.mjs'));
-  const audit = spawnSync(process.execPath, ['04-工具/security-audit.mjs'], { cwd: directory, encoding: 'utf8' });
+  const audit = runAudit(directory);
   assert.equal(audit.status, 2, audit.stdout + audit.stderr);
   assert.match(audit.stderr, /Git index/);
 });

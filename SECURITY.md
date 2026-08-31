@@ -48,10 +48,14 @@ npm run audit:security
 
 1. **当前工作树**：`git ls-files --cached --others --exclude-standard`，覆盖仍存在的 tracked 文件和所有未跟踪、未被 `.gitignore` 排除的文件；已删除的 tracked 路径在工作树范围没有内容可读，但仍由 index / 历史范围覆盖。`.git/` 不参与工作树遍历，未跟踪且已忽略的 `node_modules/` 等依赖目录也不扫描；若这类路径已进入 index 或历史，则仍按禁入项报告。
 2. **Git index**：`git ls-files --cached` 列举路径，`git show :path` 读取每个暂存对象，因此与工作树副本独立。
-3. **全部可达历史**：`git rev-list --all` 与 `git ls-tree -r` 检查每个可达提交树中的路径，`git rev-list --objects --all` 加 `git cat-file --batch` 读取所有可达 blob；相同 blob 内容只读一次。由 tag 直接引用而没有路径名的 blob 也会扫描内容。
+3. **全部可达历史**：`git rev-list --objects --all` 单次枚举可达对象，`git cat-file --batch-check` 先筛出 blob，再由一个持续的 `git cat-file --batch` 子进程逐 blob 流式读取；相同 blob 内容只读一次，不再对每个提交重复展开整棵树。`git log --all --name-only --diff-filter=AM` 另行覆盖曾进入可达提交的路径名，因此历史中的禁入扩展名不会因内容重复或后来改名而漏掉；由 tag 直接引用、没有路径名的 blob 也会扫描内容。
 
 任一范围无法列举、任一 index / 历史树 / 可达对象无法完整读取或 Git 批处理响应不完整时，审计均以退出码 2 失败，不会把“不可读”当成“安全”。历史扫描只覆盖当前 refs 可达的对象；reflog、悬空 / 已回收对象、其他 clone 中未取得的 refs、LFS 服务端内容与 submodule 内部历史不在本地 Git 可达对象集合内，必须另行审计。超大仓库的全历史扫描成本随可达提交和对象数量增长，本命令不会悄悄降级成仅扫 HEAD 或 index。
 
-凭据占位符必须完整匹配整个值，不能以前缀或子串形式夹带真实内容。对普通解构、重命名解构和成员别名的写调用（包括无分号、跨任意行距形式）、序列表达式调用、可选链、动态成员调用、对象式 `callTool({ name: ... })`，以及操作名无法静态确定的变量化 `callTool` / `invoke` 分派，审计在静态分析能力边界内采取保守报警；HTML 事件属性中的这些真实代码同样受检，明显的类方法与接口签名不视为调用。扫描器对全文件维护字符串、行 / 块 / HTML 注释、正则字面量、模板字符串及 `${...}` 插值的词法状态：模板文本本身惰性，插值表达式仍按代码扫描；正则字符类或转义中的 `//` 不会误开行注释。普通 JS 字符串、非事件 HTML 属性值、HTML / Markdown 说明段落、JS 块注释、Markdown / HTML 纯注释、Markdown 行内代码与围栏代码示例及惰性字符串示例不按可执行代码处理，但说明、注释或示例边界以外以及文档包裹中的真实可执行语法仍会被扫描。
+凭据占位符必须完整匹配整个值，不能以前缀或子串形式夹带真实内容。JavaScript 使用 Acorn 生成 ESTree AST，再沿赋值与解构关系追踪成员别名、后赋值别名、序列表达式、可选链、计算成员、模板插值和 `callTool` / `invoke` 分派；无法静态确定的动态成员或分派按写能力保守报警。HTML 使用 parse5 按 WHATWG 语法解析，只把 `<script>` 内容和 `on*` 事件属性（含无引号属性）送入 JavaScript 分析。模板文本、普通 JS 字符串、注释、正则字面量、普通 Markdown / HTML 说明、非事件属性、行内代码和围栏示例保持惰性；`${...}` 表达式及文档边界外可解析的真实语句仍会扫描。
+
+内容扫描只对已知文本扩展名执行；无路径名的可达 blob 会强制检查，但含 NUL 的对象按二进制处理，不把任意字节误解码为文本。单个应审计文本 blob 上限为 16 MiB，超过上限会明确拒绝而不是静默跳过；路径禁入规则不受大小或二进制判定影响。图片及其他二进制的语义、LFS 服务端对象与 submodule 内部历史仍需人工或对应仓库另行审计。
+
+本审计器新增的解析依赖为 `acorn` 8.18.0（MIT）、`acorn-walk` 8.3.5（MIT）、`parse5` 7.3.0（MIT），后者的传递依赖 `entities` 6.0.1 为 BSD-2-Clause；准确版本、完整许可证元数据与完整性摘要记录在 `package-lock.json`，上游许可证文本随 npm 包发布。
 
 审计检查禁入路径、常见 API key / JWT / AWS / Bearer / 密码等凭据模式，以及可执行写能力调用。敏感密钥 / 证书扩展名优先于 LICENSE、example 和 fixture 例外。它是最低限度的确定性防线，不能替代提交者对图片、其他二进制语义、LFS / submodule、不可达对象和上下文泄露的人工复核。
