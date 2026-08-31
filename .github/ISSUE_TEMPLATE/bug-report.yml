@@ -1,0 +1,72 @@
+name: Bug report
+description: Report a reproducible problem in the public workflow.
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请不要在这里贴真实账号档案、Cookie、Token、私有 Skill 或任何凭证。
+        也不要把“自动发布、自动互动、绕过风控”当作默认需求提交。
+  - type: dropdown
+    id: area
+    attributes:
+      label: 出问题的环节
+      options:
+        - 研究
+        - 选题
+        - 文案
+        - 图片
+        - 渲染
+        - 验收
+        - 集成
+        - 其他
+    validations:
+      required: true
+  - type: dropdown
+    id: host
+    attributes:
+      label: 使用的宿主
+      options:
+        - Codex Desktop
+        - Claude Code
+        - 其他
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: 环境
+      description: 例如 Windows 11 / Node 20 / npm 10
+      placeholder: Windows 11 / Node 20 / npm 10
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 写出最短可复现步骤。
+      placeholder: 1. ... 2. ... 3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 预期结果
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际结果
+      description: 贴命令、退出码和最后一段 stderr。
+    validations:
+      required: true
+  - type: textarea
+    id: privacy
+    attributes:
+      label: 隐私影响
+      description: 是否涉及登录态、个人路径、账号名或其他敏感信息。
+      placeholder: 无 / 有，已脱敏
+    validations:
+      required: true

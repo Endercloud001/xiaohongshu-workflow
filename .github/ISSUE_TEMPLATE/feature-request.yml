@@ -1,0 +1,45 @@
+name: Feature request
+description: Propose a backward-compatible improvement to the public workflow.
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请先确认这不是自动发布、自动互动或绕过平台风控的请求。
+        这类需求不在公开仓库范围内。
+  - type: textarea
+    id: problem
+    attributes:
+      label: 想解决什么问题
+      description: 说明当前流程里哪里不顺手。
+    validations:
+      required: true
+  - type: textarea
+    id: use_case
+    attributes:
+      label: 使用场景
+      description: 谁会用，什么时候用，输入和输出是什么。
+    validations:
+      required: true
+  - type: textarea
+    id: fallback
+    attributes:
+      label: 当前替代方案
+      description: 现在是怎么做的，为什么还不够。
+    validations:
+      required: true
+  - type: textarea
+    id: impact
+    attributes:
+      label: 隐私和安全影响
+      description: 是否会碰到登录态、账号档案、真实产物或第三方依赖。
+    validations:
+      required: true
+  - type: textarea
+    id: success
+    attributes:
+      label: 验收标准
+      description: 你希望什么样的结果算完成。
+    validations:
+      required: true

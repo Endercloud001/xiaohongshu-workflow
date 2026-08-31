@@ -1,0 +1,36 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Check config
+        run: npm run check:config
+
+      - name: Smoke
+        run: npm run smoke
+
+      - name: Test
+        run: npm test
+
+      - name: Verify fixture
+        run: npm run verify -- 06-产出/00000000-verify-fixture
