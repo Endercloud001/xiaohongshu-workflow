@@ -58,6 +58,8 @@ npm run audit:security
 
 JavaScript / HTML event 的写能力分析会沿递归成员路径传播危险槽位，覆盖嵌套对象初始化、嵌套解构、整对象别名和对象 spread；运行时才能确定的动态成员路径在可执行调用位置按危险处理。普通文档、字符串、注释、Markdown 代码示例和非 event HTML 属性仍按非执行内容处理。
 
+安全审计测试中的 write-call 字符串、模板和拼接结果属于测试数据，不因描述危险调用而报警；审计器仍按 JavaScript 执行语义分析测试源码，因此测试文件中真正执行的写 API 调用仍会拒绝。动态路径只在最终被调用的成员本身无法静态确定时保守报警：`clients[index][operation]()` 会拒绝，`codeLines[index].trim()` 不会仅因接收者使用索引而误报，已知写方法 `clients[index].like()` 仍会拒绝。这个写能力上下文边界不豁免任何文件或目录，测试源码与历史版本仍完整接受凭据、私钥内容和禁入路径检查。
+
 本审计器新增的解析依赖为 `acorn` 8.18.0（MIT）、`acorn-walk` 8.3.5（MIT）、`parse5` 7.3.0（MIT），后者的传递依赖 `entities` 6.0.1 为 BSD-2-Clause；准确版本、完整许可证元数据与完整性摘要记录在 `package-lock.json`，上游许可证文本随 npm 包发布。
 
 审计检查禁入路径、常见 API key / JWT / AWS / Bearer / 密码等凭据模式，以及可执行写能力调用。敏感密钥 / 证书扩展名优先于 LICENSE、example 和 fixture 例外。它是最低限度的确定性防线，不能替代提交者对图片、其他二进制语义、LFS / submodule、不可达对象和上下文泄露的人工复核。

@@ -359,6 +359,14 @@ test('flags dynamic member calls conservatively but permits dynamic member decla
   assert.equal(findWriteCapabilityInvocation(code('class Client { [opera', 'tion](note) {} }')), null);
 });
 
+test('keeps a static method call safe when only its receiver path is dynamically indexed', () => {
+  assert.equal(findWriteCapabilityInvocation('const line = codeLines[index].trim()'), null);
+  assert.equal(findWriteCapabilityInvocation('const box={inner:{p:api.publish_content}}; box[key].trim()'), null);
+  assert.match(findWriteCapabilityInvocation('clients[index][operation](payload)') ?? '', /写能力调用/);
+  assert.match(findWriteCapabilityInvocation('clients[index].like(note)') ?? '', /写能力调用/);
+  assert.match(findWriteCapabilityInvocation('const box={inner:{p:api.publish_content}}; box[key].p()') ?? '', /写能力调用/);
+});
+
 test('detects MCP and SDK write dispatch while permitting read calls and inert examples', () => {
   const op = (...parts) => parts.join('');
   for (const call of [
@@ -532,6 +540,45 @@ test('CLI audits the worktree including non-ignored untracked files', async () =
   const rejected = runAudit(repo);
   assert.equal(rejected.status, 1, rejected.stdout + rejected.stderr);
   assert.match(rejected.stderr, /worktree:untracked\.txt: 疑似凭据/);
+});
+
+test('CLI accepts historical audit fixtures but still rejects real calls in test source', async () => {
+  const repo = await mkdtemp(path.join(os.tmpdir(), 'xhs-security-history-fixture-'));
+  await mkdir(path.join(repo, '04-工具'));
+  await copyFile(new URL('./security-audit.mjs', import.meta.url), path.join(repo, '04-工具/security-audit.mjs'));
+  const runGit = (...args) => spawnSync('git', args, { cwd: repo, encoding: 'utf8' });
+  assert.equal(runGit('init').status, 0);
+  assert.equal(runGit('config', 'user.name', 'test').status, 0);
+  assert.equal(runGit('config', 'user.email', 'test@example.invalid').status, 0);
+  const historicalFixture = [
+    "const writeCall = ['client.li', 'ke(note)'].join('')",
+    "const template = `client.${['li', 'ke'].join('')}(note)`",
+    'const codeLine = codeLines[index].trim()',
+    "assert.match(findWriteCapabilityInvocation(writeCall) ?? '', /write/)",
+  ].join('\n');
+  await writeFile(path.join(repo, '04-工具/security-audit.test.mjs'), historicalFixture);
+  assert.equal(runGit('add', '.').status, 0);
+  assert.equal(runGit('commit', '-m', 'historical fixtures').status, 0);
+  await writeFile(path.join(repo, '04-工具/security-audit.test.mjs'), 'const safe = true\n');
+  assert.equal(runGit('add', '04-工具/security-audit.test.mjs').status, 0);
+  assert.equal(runGit('commit', '-m', 'safe head').status, 0);
+  let audit = runAudit(repo);
+  assert.equal(audit.status, 0, audit.stdout + audit.stderr);
+
+  await writeFile(path.join(repo, '04-工具/security-audit.test.mjs'), ['API_', 'KEY=real-test-secret-value\n'].join(''));
+  audit = runAudit(repo);
+  assert.equal(audit.status, 1, audit.stdout + audit.stderr);
+  assert.match(audit.stderr, /worktree:04-工具\/security-audit\.test\.mjs: 疑似凭据/);
+
+  await writeFile(path.join(repo, '04-工具/security-audit.test.mjs'), ['-----BEGIN ', 'PRIVATE KEY-----\n'].join(''));
+  audit = runAudit(repo);
+  assert.equal(audit.status, 1, audit.stdout + audit.stderr);
+  assert.match(audit.stderr, /worktree:04-工具\/security-audit\.test\.mjs: 私钥内容/);
+
+  await writeFile(path.join(repo, '04-工具/security-audit.test.mjs'), 'client.like(note)\n');
+  audit = runAudit(repo);
+  assert.equal(audit.status, 1, audit.stdout + audit.stderr);
+  assert.match(audit.stderr, /worktree:04-工具\/security-audit\.test\.mjs: 写能力调用/);
 });
 
 test('CLI rejects final-review executable syntax in real Markdown and HTML files', async () => {

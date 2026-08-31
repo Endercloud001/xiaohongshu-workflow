@@ -152,9 +152,15 @@ function astHasWrite(ast) {
       const prefixes = segments.map((_, index) => segments.slice(0, index + 1).join('.'));
       if (member && (dangerous.has(segments[0]) || prefixes.some(prefix => dangerousMembers.has(prefix)))) return 'write';
       if (member && (dispatch.has(segments[0]) || prefixes.some(prefix => dispatchMembers.has(prefix)))) return 'dispatch';
+      if (path?.dynamic) {
+        const root = path.key.split('.')[0];
+        const suffix = name === null ? null : `.${name}`;
+        if (dangerous.has(root) || (suffix && [...dangerousMembers].some(slot => slot.startsWith(`${root}.`) && slot.endsWith(suffix)))) return 'write';
+        if (dispatch.has(root) || (suffix && [...dispatchMembers].some(slot => slot.startsWith(`${root}.`) && slot.endsWith(suffix)))) return 'dispatch';
+      }
       if (writes.has(name)) return 'write';
       if (dispatchers.has(name)) return 'dispatch';
-      if (path?.dynamic || (node.computed && name === null)) return 'dynamic';
+      if (node.computed && name === null) return 'dynamic';
     }
     if (node.type === 'CallExpression' && propertyName(node.callee) === 'bind') return classify(node.callee.object);
     if (node.type === 'ConditionalExpression' || node.type === 'LogicalExpression') {
