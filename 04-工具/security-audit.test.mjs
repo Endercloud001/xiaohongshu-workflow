@@ -233,6 +233,26 @@ test('propagates executable write aliases through common JavaScript data-flow fo
   ]) assert.equal(findWriteCapabilityInvocation(prose), null, prose);
 });
 
+test('propagates aliased object slots through whole-object aliases and destructuring', () => {
+  const op = (...parts) => parts.join('');
+  const write = op('publish_', 'content');
+  for (const content of [
+    `const slot={p:api.${write}}; const alias=slot; alias.p()`,
+    `const slot={p:api.${write}}; const {p}=slot; p()`,
+    `const slot={p:api.${write}}; const alias=slot; const {p}=alias; p()`,
+    `const slot={}; slot.p=api.${write}; const alias=slot; alias.p()`,
+    `const slot={}; slot.p=api.${write}; const {p}=slot; p()`,
+    `const slot={p:api.${write}}; const alias=slot; alias?.p?.()`,
+    `<button onclick="const slot={p:api.${write}}; const alias=slot; alias?.p?.()">run</button>`,
+  ]) assert.match(findWriteCapabilityInvocation(content) ?? '', /写能力调用/, content);
+
+  for (const inert of [
+    `普通文档说明 const slot={p:api.${write}}; const alias=slot; alias.p()，这里只是在解释规则。`,
+    `const sample="const slot={p:api.${write}}; const alias=slot; alias.p()"`,
+    `<div data-example="const slot={p:api.${write}}; alias.p()"></div>`,
+  ]) assert.equal(findWriteCapabilityInvocation(inert), null, inert);
+});
+
 test('rejects extensionless private-key paths before fixture and license exceptions', () => {
   for (const file of [
     '.ssh/id_rsa',
@@ -514,6 +534,37 @@ test('CLI rejects final-review executable syntax in real Markdown and HTML files
   const rejected = runAudit(repo);
   assert.equal(rejected.status, 1, rejected.stdout + rejected.stderr);
   for (const file of cases.keys()) assert.match(rejected.stderr, new RegExp(`worktree:${file.replace('.', '\\.')}: 写能力调用`), file);
+});
+
+test('CLI audits aliased object slots in worktree, index, and reachable history', async () => {
+  const repo = await mkdtemp(path.join(os.tmpdir(), 'xhs-security-slot-aliases-'));
+  const runGit = (...args) => spawnSync('git', args, { cwd: repo, encoding: 'utf8' });
+  assert.equal(runGit('init').status, 0);
+  assert.equal(runGit('config', 'user.name', 'test').status, 0);
+  assert.equal(runGit('config', 'user.email', 'test@example.invalid').status, 0);
+  const op = (...parts) => parts.join('');
+  const write = op('publish_', 'content');
+  const cases = new Map([
+    ['worktree.html', `<button onclick="const slot={p:api.${write}}; const alias=slot; alias?.p?.()">run</button>`],
+    ['index.md', `const slot={p:api.${write}}; const {p}=slot; p()`],
+    ['history.md', `const slot={}; slot.p=api.${write}; const alias=slot; alias.p()`],
+  ]);
+  await writeFile(path.join(repo, 'worktree.html'), cases.get('worktree.html'));
+  await writeFile(path.join(repo, 'index.md'), cases.get('index.md'));
+  assert.equal(runGit('add', 'index.md').status, 0);
+  await rm(path.join(repo, 'index.md'));
+  await writeFile(path.join(repo, 'history.md'), cases.get('history.md'));
+  assert.equal(runGit('add', 'history.md').status, 0);
+  assert.equal(runGit('commit', '-m', 'unsafe history').status, 0);
+  await writeFile(path.join(repo, 'history.md'), 'safe\n');
+  assert.equal(runGit('add', 'history.md').status, 0);
+  assert.equal(runGit('commit', '-m', 'safe head').status, 0);
+
+  const rejected = runAudit(repo);
+  assert.equal(rejected.status, 1, rejected.stdout + rejected.stderr);
+  assert.match(rejected.stderr, /worktree:worktree\.html: 写能力调用/);
+  assert.match(rejected.stderr, /index:index\.md: 写能力调用/);
+  assert.match(rejected.stderr, /history:.*history\.md: 写能力调用/);
 });
 
 test('CLI rejects final-review extensionless key paths and private-key armor', async () => {

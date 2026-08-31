@@ -161,6 +161,15 @@ function astHasWrite(ast) {
         const set = kind === 'write' || kind === 'dynamic' ? dangerous : kind === 'dispatch' ? dispatch : null;
         if (set && !set.has(target.name)) { set.add(target.name); changed = true; }
         const source = unwrap(value);
+        if (source?.type === 'Identifier') {
+          for (const [members, prefix] of [[dangerousMembers, `${source.name}.`], [dispatchMembers, `${source.name}.`]]) {
+            for (const member of [...members]) {
+              if (!member.startsWith(prefix)) continue;
+              const alias = `${target.name}.${member.slice(prefix.length)}`;
+              if (!members.has(alias)) { members.add(alias); changed = true; }
+            }
+          }
+        }
         if (source?.type === 'ObjectExpression') {
           for (const part of source.properties) {
             const name = propertyName({ type: 'MemberExpression', computed: part.computed, property: part.key });
@@ -180,9 +189,12 @@ function astHasWrite(ast) {
       } else if (target.type === 'AssignmentPattern') {
         propagate(target.left, classify(value) ? value : target.right);
       } else if (target.type === 'ObjectPattern') {
+        const source = unwrap(value);
         for (const part of target.properties) {
           const name = part.computed ? part.key.value : part.key.name;
-          const set = writes.has(name) ? dangerous : dispatchers.has(name) ? dispatch : null;
+          const member = source?.type === 'Identifier' && name !== null ? `${source.name}.${name}` : null;
+          const set = writes.has(name) || (member && dangerousMembers.has(member)) ? dangerous
+            : dispatchers.has(name) || (member && dispatchMembers.has(member)) ? dispatch : null;
           const binding = part.value?.type === 'AssignmentPattern' ? part.value.left : part.value;
           if (set && binding?.type === 'Identifier' && !set.has(binding.name)) { set.add(binding.name); changed = true; }
         }
